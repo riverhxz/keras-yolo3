@@ -33,12 +33,6 @@ def _main():
     else:
         model = create_model(input_shape, anchors, num_classes,
             freeze_body=2, weights_path='model_data/darknet53.weights.h5') # make sure you know what you freeze
-    model = tf.contrib.tpu.keras_to_tpu_model(
-        model,
-        strategy=tf.contrib.tpu.TPUDistributionStrategy(
-            tf.contrib.cluster_resolver.TPUClusterResolver(tpu='grpc://' + os.environ['COLAB_TPU_ADDR'])
-        )
-    )
 
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5',
