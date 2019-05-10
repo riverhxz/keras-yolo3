@@ -342,7 +342,7 @@ def box_iou(b1, b2):
     return iou
 
 
-def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
+def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False, summary_loss=True):
     '''Return yolo_loss tensor
 
     Parameters
@@ -407,6 +407,22 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
         confidence_loss = K.sum(confidence_loss) / mf
         class_loss = K.sum(class_loss) / mf
         loss += xy_loss + wh_loss + confidence_loss + class_loss
+        if summary_loss:
+            def __variable_summaries(*argv):
+                """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+                with tf.name_scope('summaries'):
+                    for x in argv:
+                        mean = tf.reduce_mean(argv)
+                        tf.summary.scalar('mean', mean)
+                        # with tf.name_scope('stddev'):
+                        #     stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+                        # tf.summary.scalar('stddev', stddev)
+                        # tf.summary.scalar('max', tf.reduce_max(var))
+                        # tf.summary.scalar('min', tf.reduce_min(var))
+                        # tf.summary.histogram('histogram', var)
+            vars = [loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask)]
+            __variable_summaries(*vars)
         if print_loss:
             loss = tf.Print(loss, [loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask)], message='loss: ')
     return loss
+
