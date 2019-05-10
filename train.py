@@ -8,7 +8,7 @@ from keras.layers import Input, Lambda
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
-
+import tensorflow as tf
 from yolo3.model import preprocess_true_boxes, yolo_body, tiny_yolo_body, yolo_loss
 from yolo3.utils import get_random_data
 
@@ -33,6 +33,12 @@ def _main():
     else:
         model = create_model(input_shape, anchors, num_classes,
             freeze_body=2, weights_path='model_data/darknet53.weights.h5') # make sure you know what you freeze
+    model = tf.contrib.tpu.keras_to_tpu_model(
+        model,
+        strategy=tf.contrib.tpu.TPUDistributionStrategy(
+            tf.contrib.cluster_resolver.TPUClusterResolver(tpu='grpc://' + os.environ['COLAB_TPU_ADDR'])
+        )
+    )
 
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5',
@@ -52,6 +58,7 @@ def _main():
     # Train with frozen layers first, to get a stable loss.
     # Adjust num epochs to your dataset. This step is enough to obtain a not bad model.
     if True:
+
         model.compile(optimizer=Adam(lr=1e-3), loss={
             # use custom yolo_loss Lambda layer.
             'yolo_loss': lambda y_true, y_pred: y_pred})
