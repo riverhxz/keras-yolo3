@@ -392,7 +392,7 @@ def box_iou(b1, b2):
     return iou
 
 
-def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False, summary_loss=True):
+def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=True, summary_loss=True):
     '''Return yolo_loss tensor
 
      Parameters

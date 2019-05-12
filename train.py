@@ -191,13 +191,5 @@ def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, n
     if n==0 or batch_size<=0: return None
     return data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes)
 
-def produce_eval_data():
-    # create yolo model with predict head
-    yolo  = YOLO(**{})
-
-    '''
-    kinds of loss for simple
-    '''
-
 if __name__ == '__main__':
     _main()
