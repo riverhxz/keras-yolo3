@@ -9,6 +9,8 @@ from keras.models import Model
 from keras.optimizers import Adam
 from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 import tensorflow as tf
+
+from yolo import YOLO
 from yolo3.model import preprocess_true_boxes, yolo_body, tiny_yolo_body, yolo_loss
 from yolo3.utils import get_random_data
 import os
@@ -71,7 +73,7 @@ def _main():
     # Unfreeze and continue training, to fine-tune.
     # Train longer if the result is not good.
     if True:
-        model.load_weights(log_dir + 'trained_weights_stage_1.h5')
+        # model.load_weights(log_dir + 'trained_weights_stage_1.h5') #TODO remove
         for i in range(len(model.layers)):
             model.layers[i].trainable = True
         model.compile(optimizer=Adam(lr=1e-4), loss={'yolo_loss': lambda y_true, y_pred: y_pred}) # recompile to apply the change
@@ -188,6 +190,14 @@ def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, n
     n = len(annotation_lines)
     if n==0 or batch_size<=0: return None
     return data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes)
+
+def produce_eval_data():
+    # create yolo model with predict head
+    yolo  = YOLO(**{})
+
+    '''
+    kinds of loss for simple
+    '''
 
 if __name__ == '__main__':
     _main()

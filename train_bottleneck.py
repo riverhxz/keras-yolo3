@@ -160,6 +160,7 @@ def create_model(input_shape, anchors, num_classes, load_pretrained=True, freeze
     last_out1=model_body.layers[250](in1)
     last_out2=model_body.layers[251](in2)
     model_last=Model(inputs=[in0, in1, in2], outputs=[last_out0, last_out1, last_out2])
+
     model_loss_last =Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
         arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})(
         [*model_last.output, *y_true])
