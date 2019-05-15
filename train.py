@@ -11,19 +11,24 @@ from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, Ear
 from keras.callbacks import Callback
 import tensorflow as tf
 
-from yolo import YOLO
 from yolo3 import model
 from yolo3.model import preprocess_true_boxes, yolo_body, tiny_yolo_body, yolo_loss
 from yolo3.utils import get_random_data
-import os
+from datetime import datetime
 
 
 class UpdateCallBack(Callback):
 
-    def __init__(self, logits, y, center):
+    def set_update_param(self, logits, y, center):
         self.logits = logits
         self.y = y
         self.center = center
+
+    def __init__(self):
+        super(Callback, self).__init__()
+        self.logits = None
+        self.y = None
+        self.center = None
 
     def on_batch_end(self, batch, logs=None):
         model.update_prototype(self.logits, self.y, self.center)
@@ -34,7 +39,7 @@ def _main():
     log_dir = 'logs/000/'
     classes_path = 'model_data/stdogs_classes.txt'
     anchors_path = 'model_data/yolo_anchors.txt'
-    val_split = 0.1
+    val_split = 0.5
 
     class_names = get_classes(classes_path)
     num_classes = len(class_names)
@@ -42,14 +47,21 @@ def _main():
 
     input_shape = (416, 416)  # multiple of 32, hw
 
+    update_callback = UpdateCallBack()
+
     is_tiny_version = len(anchors) == 6  # default setting
     if is_tiny_version:
         model = create_tiny_model(input_shape, anchors, num_classes,
                                   freeze_body=2, weights_path='model_data/tiny_yolo_weights.h5')
     else:
-        model = create_model(input_shape, anchors, num_classes,
+        model = create_model(input_shape, anchors, num_classes, update_callback,
                              freeze_body=2,
                              weights_path='model_data/darknet53.weights.h5')  # make sure you know what you freeze
+
+    logdir = "logs/variables/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    from tensorflow.contrib.summary.summary import create_file_writer
+    file_writer = create_file_writer(logdir + "/metrics")
+    file_writer.set_as_default()
 
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5',
@@ -64,7 +76,6 @@ def _main():
     np.random.seed(None)
     num_val = int(len(lines) * val_split)
     num_train = len(lines) - num_val
-    # updateCallBack = UpdateCallBack()
 
     # Train with frozen layers first, to get a stable loss.
     # Adjust num epochs to your dataset. This step is enough to obtain a not bad model.
@@ -126,7 +137,7 @@ def get_anchors(anchors_path):
     return np.array(anchors).reshape(-1, 2)
 
 
-def create_model(input_shape, anchors, num_classes, load_pretrained=True, freeze_body=2,
+def create_model(input_shape, anchors, num_classes, update_callback, load_pretrained=True, freeze_body=2,
                  weights_path='model_data/yolo_weights.h5'):
     '''create the training model'''
     K.clear_session()  # get a new session
@@ -150,11 +161,13 @@ def create_model(input_shape, anchors, num_classes, load_pretrained=True, freeze
             print('Freeze the first {} layers of total {} layers.'.format(num, len(model_body.layers)))
 
     model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
-                        arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})(
+                        arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5,
+                                   'update_callback': update_callback})(
         [*model_body.output, *y_true])
     model = Model([model_body.input, *y_true], model_loss)
 
     return model
+
 
 def create_tiny_model(input_shape, anchors, num_classes, load_pretrained=True, freeze_body=2,
                       weights_path='model_data/tiny_yolo_weights.h5'):
