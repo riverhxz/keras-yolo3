@@ -543,8 +543,6 @@ def _yolo_loss(args, anchors, num_classes, update_callback, ignore_thresh=.5, pr
         with tf.variable_scope("prototype", reuse=tf.AUTO_REUSE):
             class_center = tf.get_variable("class_center")
 
-        update_callback.set_update_param(raw_pred[..., 5:7], extend_true_class_probs, class_center)
-
         num_pos = tf.reduce_sum(true_class_probs)
         pos = tf.reduce_sum(true_class_probs, axis=4, )
         all = tf.cast(tf.reduce_prod(tf.shape(true_class_probs)), K.dtype(pos))
@@ -588,37 +586,38 @@ def _yolo_loss(args, anchors, num_classes, update_callback, ignore_thresh=.5, pr
                 # Combine streaming accuracy and confusion matrix updates in one op
                 test_op = tf.group(accuracy_update, confusion_update)
 
-                tf.summary.image('confusion', confusion_image)
-                tf.summary.scalar('accuracy', accuracy)
+                # tf.summary.image('confusion', confusion_image)
+                # tf.summary.scalar('accuracy', accuracy)
 
-            return test_op, accuracy, confusion
+            return {'accuracy', accuracy}
 
         _get_streaming_metrics(true_class_probs, raw_pred[..., 5:7], num_classes, "classify_branch")
-        _get_streaming_metrics(extend_true_class_probs, raw_pred[..., 7:], num_classes+1, "metric_branch")
+        _get_streaming_metrics(extend_true_class_probs, raw_pred[..., 7:], num_classes + 1, "metric_branch")
 
         if summary_loss:
             def __variable_summaries(*argv):
                 """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
                 with tf.name_scope('summaries'):
-                    for x in argv:
-                        tf.summary.scalar(x.name.replace(":", "_"), x)
-                        # mean = tf.reduce_mean(x)
-                        # tf.summary.scalar('mean_' + x.name, mean)
-                        # with tf.name_scope('stddev'):
-                        #     stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-                        # tf.summary.scalar('stddev', stddev)
-                        # tf.summary.scalar('max', tf.reduce_max(var))
-                        # tf.summary.scalar('min', tf.reduce_min(var))
-                        # tf.summary.histogram('histogram', var)
+                    return [(x.name.replace(":", "_"), x) for x in argv]
+                    # [(x.name.replace(":", "_"), x) for x in argv]
+                    # for x in argv:
+                    #     tf.summary.scalar(x.name.replace(":", "_"), x)
+                    # mean = tf.reduce_mean(x)
+                    # tf.summary.scalar('mean_' + x.name, mean)
+                    # with tf.name_scope('stddev'):
+                    #     stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+                    # tf.summary.scalar('stddev', stddev)
+                    # tf.summary.scalar('max', tf.reduce_max(var))
+                    # tf.summary.scalar('min', tf.reduce_min(var))
+                    # tf.summary.histogram('histogram', var)
 
-            vars = [loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask),multi_class_loss]
-            __variable_summaries(*vars)
-        if print_loss:
-            loss = tf.print(loss, [tf.shape(ignore_mask)
-                , tf.shape(true_class_probs)[3:]
-                , tf.shape(raw_pred[..., 7:])[3:]
-                , loss, xy_loss, wh_loss, confidence_loss, class_loss,
-                                   K.sum(ignore_mask), multi_class_loss],
-                            message='loss: ')
+            vars = [loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask), multi_class_loss]
+
+            update_callback.set_update_param(raw_pred[..., 5:7], extend_true_class_probs, class_center,
+                                             dict(__variable_summaries(*vars)))
+
+        # if print_loss:
+        #     loss = tf.print(*[loss, xy_loss, wh_loss, confidence_loss, class_loss,
+        #                       K.sum(ignore_mask), multi_class_loss])
 
     return loss

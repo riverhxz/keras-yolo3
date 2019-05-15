@@ -19,10 +19,11 @@ from datetime import datetime
 
 class UpdateCallBack(Callback):
 
-    def set_update_param(self, logits, y, center):
+    def set_update_param(self, logits, y, center, watches={}):
         self.logits = logits
         self.y = y
         self.center = center
+        self.watches = watches
 
     def __init__(self):
         super(Callback, self).__init__()
@@ -32,6 +33,8 @@ class UpdateCallBack(Callback):
 
     def on_batch_end(self, batch, logs=None):
         model.update_prototype(self.logits, self.y, self.center)
+        for k, v in self.watches.items():
+            tf.summary.scalar(k, v)
 
 
 def _main():
