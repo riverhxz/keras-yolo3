@@ -2,7 +2,7 @@
 
 from functools import wraps
 
-import numpy as np
+import sys
 import tensorflow as tf
 from keras import backend as K
 from keras.layers import Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate, MaxPooling2D, Lambda, Dense
@@ -12,7 +12,8 @@ from keras.models import Model
 from keras.regularizers import l2
 
 from yolo3.utils import compose
-import collections
+import pandas as pd
+import numpy as np
 
 
 @wraps(Conv2D)
@@ -58,35 +59,39 @@ def darknet_body(x):
     return x
 
 
-def update_prototype(feature_map: tf.Tensor, y: tf.Tensor, center: tf.Tensor, num_class, ld=5e-2):
-    vy = y.eval()
-    # vy = y.numpy()
-    is_bg = vy.sum(axis=1) == 0
+def update_prototype(feature_map: tf.Tensor, y: tf.Tensor, center: tf.Tensor, ld=5e-2):
+    v_feature_map = feature_map.eval()
+    v_y = np.argmax(y.eval(), axis=1)
+    v_center = center.eval()
 
-    y_with_bg = np.argmax(vy, axis=1)
-    # y_with_bg = np.argmax(vy, axis=1) + is_bg * num_class
-    v_feature_map = feature_map
-    for i in range(vy.shape[1]):
-        center[y_with_bg[i]].assign(
-            # v_feature_map[y_with_bg[i]] * ld + (1 - ld) * center[y_with_bg[i]])
-            tf.assign(center[y_with_bg[i]], v_feature_map[y_with_bg[i]] * ld + (1 - ld) * center[y_with_bg[i]]))
-        # center[-1, :].assign(tf.reduce_mean(center[:-1, :], axis=0))
-        tf.assign(center[-1, :], tf.reduce_mean(center[:-1, :], axis=0))
+    df = pd.DataFrame({'y': v_y,
+                       "feature_map": [v_feature_map[i] for i in range(v_feature_map.shape[0])]})
+    df2 = df.groupby("y")["feature_map"].apply(np.mean)
+    update_ops = []
+    for i in df2.index:
+        update_ops.append(tf.assign(center[i], (1 - ld) * v_center[i] + ld * df2.loc[i]))
+
+    return update_ops
 
 
 def test_update_prototype():
-    feature_map = tf.constant([[1.], [2.]])
-    y = tf.constant([[1, 0], [0, 1]])
-    center = tf.Variable([[0.], [1.], [0.5]])
-    num_class = 2
+    with tf.Session().as_default() as sess:
+        v_feature_map = tf.constant(np.array([[0., 1.], [1., 2.], [3., 4.]]), dtype=tf.float32)
+        v_y = tf.constant([[0, 0, 1], [0, 1, 0], [0, 1, 0]])
+        center = tf.Variable([[0, 0], [2, 3], [0, 0]], dtype=tf.float32)
+        expectd = tf.constant([[0, 0], [2, 3], [0, 0.5]], dtype=tf.float32)
+        sess.run(tf.initialize_all_variables())
+        update_ops = update_prototype(
+            v_feature_map
+            , v_y
+            , center
+            , 0.5
+        )
+        sess.run(update_ops)
+        assert (tf.cast(expectd, tf.float32) - center).eval().sum() == 0
 
-    expected = tf.constant([[0.1], [1.1], [1.2 / 2]])
-    update_prototype(
-        feature_map, y, center, num_class, 0.1
-    )
 
-    print(center, expected)
-    assert (center - expected).numpy().sum() == 0
+test_update_prototype()
 
 
 def distance(x, num_anchor, num_filters, class_center, num_classes):
@@ -110,7 +115,7 @@ def distance(x, num_anchor, num_filters, class_center, num_classes):
 
 def make_last_layers(x, num_filters, out_filters, layer, num_classes=2, num_anchor=3):
     '''6 Conv2D_BN_Leaky layers followed by a Conv2D_linear layer'''
-    center_dims = 128 * num_anchor
+    center_dims = 128
     with tf.variable_scope("prototype", reuse=tf.AUTO_REUSE):
         class_center = tf.get_variable("class_center", [(num_classes + 1), center_dims], trainable=False)
         class_center = tf.reshape(class_center, [1, 1, 1, (num_classes + 1), center_dims])
@@ -128,7 +133,7 @@ def make_last_layers(x, num_filters, out_filters, layer, num_classes=2, num_anch
     z = DarknetConv2D_BN_Leaky(center_dims * num_anchor, (1, 1))(x)
     _distance = lambda x: distance(x, num_anchor=num_anchor
                                    , num_filters=center_dims, class_center=class_center, num_classes=num_classes)
-    z = Lambda(_distance)(z)
+    z = Lambda(_distance, name="yolo_last_" + str(num_filters))(z)
     y = Concatenate()([y, z])
     return x, y
 
@@ -562,62 +567,65 @@ def _yolo_loss(args, anchors, num_classes, update_callback, ignore_thresh=.5, pr
                  + multi_class_loss
                  )
 
-        def _get_streaming_metrics(_label, _prediction, num_classes, name):
+    def _get_streaming_metrics(_label, _prediction, num_classes, name):
 
-            label = tf.reshape(_label, [-1])
-            prediction = tf.reshape(_prediction, [-1])
-            with tf.name_scope(name):
-                # the streaming accuracy (lookup and update tensors)
-                accuracy, accuracy_update = tf.metrics.accuracy(label, prediction,
-                                                                name='accuracy')
-                # Compute a per-batch confusion
-                batch_confusion = tf.confusion_matrix(label, prediction,
-                                                      num_classes=num_classes,
-                                                      name='batch_confusion')
-                # Create an accumulator variable to hold the counts
-                confusion = tf.Variable(tf.zeros([num_classes, num_classes],
-                                                 dtype=tf.int32),
-                                        name='confusion')
-                # Create the update op for doing a "+=" accumulation on the batch
-                confusion_update = confusion.assign(confusion + batch_confusion)
-                # Cast counts to float so tf.summary.image renormalizes to [0,255]
-                confusion_image = tf.reshape(tf.cast(confusion, tf.float32),
-                                             [1, num_classes, num_classes, 1])
-                # Combine streaming accuracy and confusion matrix updates in one op
-                test_op = tf.group(accuracy_update, confusion_update)
+        label = tf.reshape(_label, [-1])
+        prediction = tf.reshape(_prediction, [-1])
+        with tf.name_scope(name):
+            # the streaming accuracy (lookup and update tensors)
+            accuracy, accuracy_update = tf.metrics.accuracy(label, prediction,
+                                                            name='accuracy')
+            # Compute a per-batch confusion
+            batch_confusion = tf.confusion_matrix(label, prediction,
+                                                  num_classes=num_classes,
+                                                  name='batch_confusion')
+            # Create an accumulator variable to hold the counts
+            confusion = tf.Variable(tf.zeros([num_classes, num_classes],
+                                             dtype=tf.int32),
+                                    name='confusion')
+            # Create the update op for doing a "+=" accumulation on the batch
+            confusion_update = confusion.assign(confusion + batch_confusion)
+            # Cast counts to float so tf.summary.image renormalizes to [0,255]
+            confusion_image = tf.reshape(tf.cast(confusion, tf.float32),
+                                         [1, num_classes, num_classes, 1])
+            # Combine streaming accuracy and confusion matrix updates in one op
+            test_op = tf.group(accuracy_update, confusion_update)
 
-                # tf.summary.image('confusion', confusion_image)
-                # tf.summary.scalar('accuracy', accuracy)
+            # tf.summary.image('confusion', confusion_image)
+            # tf.summary.scalar('accuracy', accuracy)
 
-            return {'accuracy', accuracy}
+        return {'accuracy', accuracy}
 
-        _get_streaming_metrics(true_class_probs, raw_pred[..., 5:7], num_classes, "classify_branch")
-        _get_streaming_metrics(extend_true_class_probs, raw_pred[..., 7:], num_classes + 1, "metric_branch")
+    _get_streaming_metrics(true_class_probs, raw_pred[..., 5:7], num_classes, "classify_branch")
+    _get_streaming_metrics(extend_true_class_probs, raw_pred[..., 7:], num_classes + 1, "metric_branch")
 
-        if summary_loss:
-            def __variable_summaries(*argv):
-                """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
-                with tf.name_scope('summaries'):
-                    return [(x.name.replace(":", "_"), x) for x in argv]
-                    # [(x.name.replace(":", "_"), x) for x in argv]
-                    # for x in argv:
-                    #     tf.summary.scalar(x.name.replace(":", "_"), x)
-                    # mean = tf.reduce_mean(x)
-                    # tf.summary.scalar('mean_' + x.name, mean)
-                    # with tf.name_scope('stddev'):
-                    #     stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-                    # tf.summary.scalar('stddev', stddev)
-                    # tf.summary.scalar('max', tf.reduce_max(var))
-                    # tf.summary.scalar('min', tf.reduce_min(var))
-                    # tf.summary.histogram('histogram', var)
+    if summary_loss:
+        def __variable_summaries(*argv):
+            """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+            with tf.name_scope('summaries'):
+                return [(x.name.replace(":", "_"), x) for x in argv]
+                # [(x.name.replace(":", "_"), x) for x in argv]
+                # for x in argv:
+                #     tf.summary.scalar(x.name.replace(":", "_"), x)
+                # mean = tf.reduce_mean(x)
+                # tf.summary.scalar('mean_' + x.name, mean)
+                # with tf.name_scope('stddev'):
+                #     stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+                # tf.summary.scalar('stddev', stddev)
+                # tf.summary.scalar('max', tf.reduce_max(var))
+                # tf.summary.scalar('min', tf.reduce_min(var))
+                # tf.summary.histogram('histogram', var)
 
-            vars = [loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask), multi_class_loss]
+        vars = [loss, xy_loss, wh_loss, confidence_loss, class_loss, multi_class_loss]
 
-            update_callback.set_update_param(raw_pred[..., 5:7], extend_true_class_probs, class_center,
-                                             dict(__variable_summaries(*vars)))
+        update_callback.set_update_param(raw_pred[..., 5:7], extend_true_class_probs, class_center,
+                                         dict(__variable_summaries(*vars)))
 
-        # if print_loss:
-        #     loss = tf.print(*[loss, xy_loss, wh_loss, confidence_loss, class_loss,
-        #                       K.sum(ignore_mask), multi_class_loss])
+    if print_loss:
+        print_op = tf.print("[xy_loss, wh_loss, confidence_loss, class_loss, multi_class_loss]",
+                            *[xy_loss, wh_loss, confidence_loss, class_loss, multi_class_loss],
+                            output_stream=sys.stdout)
+        with tf.control_dependencies([print_op]):
+            loss = loss * 1.0
 
     return loss

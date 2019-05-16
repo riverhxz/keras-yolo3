@@ -32,7 +32,16 @@ class UpdateCallBack(Callback):
         self.center = None
 
     def on_batch_end(self, batch, logs=None):
-        model.update_prototype(self.logits, self.y, self.center)
+
+
+        print_op = tf.print("proto update is done")
+
+        with tf.control_dependencies([print_op]):
+            update_ops = model.update_prototype(self.logits, self.y, self.center)
+            for x in update_ops:
+                x.run()
+
+
         for k, v in self.watches.items():
             tf.summary.scalar(k, v)
 
@@ -96,7 +105,7 @@ def _main():
                             validation_steps=max(1, num_val // batch_size),
                             epochs=50,
                             initial_epoch=0,
-                            callbacks=[logging, checkpoint])
+                            callbacks=[logging, checkpoint, update_callback])
         model.save_weights(log_dir + 'trained_weights_stage_1.h5')
 
     # Unfreeze and continue training, to fine-tune.
@@ -118,7 +127,7 @@ def _main():
                             validation_steps=max(1, num_val // batch_size),
                             epochs=100,
                             initial_epoch=50,
-                            callbacks=[logging, checkpoint, reduce_lr, early_stopping])
+                            callbacks=[logging, checkpoint, reduce_lr, early_stopping, update_callback])
         model.save_weights(log_dir + 'trained_weights_final.h5')
 
     # Further training if needed.
