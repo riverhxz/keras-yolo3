@@ -152,6 +152,7 @@ def create_model(input_shape, anchors, num_classes, update_callback, load_pretra
                            num_anchors // 3, num_classes + 5)) for l in range(3)]
 
     model_body = yolo_body(image_input, num_anchors // 3, num_classes)
+    model_body.summary()
     print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, num_classes))
 
     if load_pretrained:
