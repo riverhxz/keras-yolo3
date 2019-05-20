@@ -1,53 +1,23 @@
 """
 Retrain the YOLO model for your own dataset.
 """
+from tqdm import *
+
 
 import numpy as np
 import tensorflow.python.keras.backend as K
-from   tensorflow.python.keras.layers import Input, Lambda
-from   tensorflow.python.keras.models import Model
-from   tensorflow.python.keras.optimizers import Adam
-from   tensorflow.python.keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
-from   tensorflow.python.keras.callbacks import Callback
+from tensorflow.python.keras.layers import Input, Lambda
+from tensorflow.python.keras.models import Model
 import tensorflow as tf
 
 from yolo3 import model
 from yolo3.model import preprocess_true_boxes, yolo_body, tiny_yolo_body, yolo_loss
 from yolo3.utils import get_random_data
 from datetime import datetime
-
-
-print(tf.__version__)
-class UpdateCallBack(Callback):
-
-    def set_update_param(self, logits, y, center, watches={}):
-        self.logits = logits
-        self.y = y
-        self.center = center
-        self.watches = watches
-
-    def __init__(self):
-        super(Callback, self).__init__()
-        self.logits = None
-        self.y = None
-        self.center = None
-
-    def on_batch_end(self, batch, logs=None):
-
-
-        print_op = tf.print("proto update is done")
-
-        with tf.control_dependencies([print_op]):
-            update_ops = model.update_prototype(self.logits, self.y, self.center)
-            for x in update_ops:
-                x.run()
-
-
-        for k, v in self.watches.items():
-            tf.summary.scalar(k, v)
-
+from tqdm import *
 
 def _main():
+    from train import get_classes, get_anchors
     annotation_path = 'data/input.csv'
     log_dir = 'logs/000/'
     classes_path = 'model_data/stdogs_classes.txt'
@@ -60,27 +30,7 @@ def _main():
 
     input_shape = (416, 416)  # multiple of 32, hw
 
-    update_callback = UpdateCallBack()
-
     is_tiny_version = len(anchors) == 6  # default setting
-    if is_tiny_version:
-        model = create_tiny_model(input_shape, anchors, num_classes,
-                                  freeze_body=2, weights_path='model_data/tiny_yolo_weights.h5')
-    else:
-        model = create_model(input_shape, anchors, num_classes, update_callback,
-                             freeze_body=2,
-                             weights_path='model_data/darknet53.weights.h5')  # make sure you know what you freeze
-
-    logdir = "logs/variables/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-    from tensorflow.python.summary import create_file_writer
-    file_writer = create_file_writer(logdir + "/metrics")
-    file_writer.set_as_default()
-
-    logging = TensorBoard(log_dir=log_dir)
-    checkpoint = ModelCheckpoint(log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5',
-                                 monitor='val_loss', save_weights_only=True, save_best_only=True, period=3)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1)
-    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1)
 
     with open(annotation_path) as f:
         lines = f.readlines()
@@ -90,74 +40,74 @@ def _main():
     num_val = int(len(lines) * val_split)
     num_train = len(lines) - num_val
 
-    num_epoches=100
-    tf.data.Dataset.from_generator()
+    batch_size = 4
+    train_data = data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes)
+    eval_data  = data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors, num_classes)
 
-    def train_step(images, labels):
+    body = model_body(input_shape, anchors, num_classes, None,
+                      freeze_body=2,
+                      weights_path='model_data/darknet53.weights.h5')
+
+
+    num_epoch = 10
+    optimizer = tf.keras.optimizers.Adam()
+    tf.summary.experimental.set_step(0)
+    val_step = 10
+
+    def train_step(image, y1, y2, y3):
+
         with tf.GradientTape() as tape:
-            outputs = model.outputs
+            outputs = body(image)
+            loss = loss_wrapper(outputs, [y1, y2, y3], anchors, num_classes)
+            grads = tape.gradient(loss, body.trainable_weights)
+            optimizer.apply_gradients(zip(grads, body.trainable_variables))
+            return loss
 
-            # Add asserts to check the shape of the output.
-            tf.debugging.assert_equal(logits.shape, (32, 10))
+    def evaluate_step(image, y1, y2, y3):
+        with tf.GradientTape() as tape:
+            outputs = body(image)
+            loss = loss_wrapper(outputs, [y1, y2, y3], anchors, num_classes)
+            return loss
 
-            loss_value = loss_object(labels, logits)
+    for epoch in range(num_epoch):
+        with tqdm(train_data, total=num_train / batch_size) as tbar:
+            for x in train_data:
+                image, y1, y2, y3 = x
+                loss = train_step(image, y1, y2, y3)
+                tbar.update(1)
+                tbar.set_description("loss={:.3f}".format(loss))
 
-        loss_history.append(loss_value.numpy().mean())
-        grads = tape.gradient(loss_value, mnist_model.trainable_variables)
-        optimizer.apply_gradients(zip(grads, mnist_model.trainable_variables))
-
-    # def manual_bp():
-    #     for epoch in range(num_epoches):
-    #         for (step, (x, y)) in enumerate(
-    #                 data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes)):
-    #
-    #             with tf.GradientTape() as tape:
-
-
-
-    # Train with frozen layers first, to get a stable loss.
-    # Adjust num epochs to your dataset. This step is enough to obtain a not bad model.
-
-    if False:
-        model.compile(optimizer=Adam(lr=1e-3), loss={
-            # use custom yolo_loss Lambda layer.
-            'yolo_loss': lambda y_true, y_pred: y_pred})
-
-        batch_size = 32
-        print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
-        model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
-                            steps_per_epoch=max(1, num_train // batch_size),
-                            validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors,num_classes),
-                            validation_steps=max(1, num_val // batch_size),
-                            epochs=50,
-                            initial_epoch=0,
-                            callbacks=[logging, checkpoint])
-        model.save_weights(log_dir + 'trained_weights_stage_1.h5')
-
-    # Unfreeze and continue training, to fine-tune.
-    # Train longer if the result is not good.
-    if True:
-        # model.load_weights(log_dir + 'trained_weights_stage_1.h5') #TODO remove
-        for i in range(len(model.layers)):
-            model.layers[i].trainable = True
-        model.compile(optimizer=Adam(lr=1e-4),
-                      loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
-        print('Unfreeze all of the layers.')
-
-        batch_size = 4  # note that more GPU memory is required after unfreezing the body
-        print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
-        model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
-                            steps_per_epoch=max(1, num_train // batch_size),
-                            validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors,
-                                                                   num_classes),
-                            validation_steps=max(1, num_val // batch_size),
-                            epochs=100,
-                            initial_epoch=50,
-                            callbacks=[logging, checkpoint, reduce_lr, early_stopping])
-        model.save_weights(log_dir + 'trained_weights_final.h5')
+        for x in range(val_step):
+            image, y1, y2, y3 = x
+            evaluate_step(image, y1, y2, y3)
 
 
-    # Further training if needed.
+def extends(true_class_probs):
+    extend_true_class_probs = tf.concat(
+        [true_class_probs, 1 - tf.reduce_sum(true_class_probs, axis=4, keepdims=True)], axis=4)
+    return tf.argmax(extend_true_class_probs, axis=4)
+
+
+def moveing_avg(variable, value, update_weight=0.05):
+    return variable.assign(variable * (1 - update_weight) + update_weight * value)
+
+def update(center, value, keys):
+    z = extends(keys)
+    ez = tf.cast(tf.expand_dims(z, 4), value[0].dtype)
+    v_shape = tf.shape(value)
+    reshape_value = tf.reshape(value, [*v_shape[:-1], 1, v_shape[-1]])
+    group_bys = tf.reduce_mean(ez * reshape_value, axis=[0, 1, 2])
+    return moveing_avg(center, group_bys)
+
+def update_centers():
+    gap = outputs[3:6]
+    keys = [x[..., 5:7] for x in [y1, y2, y3]]
+    for (center, v, k) in zip(
+            model.model_global.centers
+            , gap
+            , keys
+    ):
+        update(center, v, k)
 
 
 def get_classes(classes_path):
@@ -239,6 +189,32 @@ def create_tiny_model(input_shape, anchors, num_classes, load_pretrained=True, f
     return model
 
 
+def model_body(input_shape, anchors, num_classes, update_callback, load_pretrained=True, freeze_body=0,
+               weights_path='model_data/yolo_weights.h5'):
+    K.clear_session()  # get a new session
+    image_input = Input(shape=(None, None, 3))
+    h, w = input_shape
+    num_anchors = len(anchors)
+
+    model_body = yolo_body(image_input, num_anchors // 3, num_classes)
+    print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, num_classes))
+
+    if load_pretrained:
+        model_body.load_weights(weights_path, by_name=True)
+        print('Load weights {}.'.format(weights_path))
+        if freeze_body in [1, 2]:
+            # Freeze darknet53 body or freeze all but 3 output layers.
+            num = (185, len(model_body.layers) - 3)[freeze_body - 1]
+            for i in range(num): model_body.layers[i].trainable = False
+            print('Freeze the first {} layers of total {} layers.'.format(num, len(model_body.layers)))
+
+    return model_body
+
+
+def loss_wrapper(outputs, pred, anchors, num_classes):
+    return yolo_loss([*outputs, *pred], anchors=anchors, num_classes=num_classes, ignore_thresh=0.5, print_loss=False)
+
+
 def data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes):
     '''data generator for fit_generator'''
     n = len(annotation_lines)
@@ -256,15 +232,24 @@ def data_generator(annotation_lines, batch_size, input_shape, anchors, num_class
         image_data = np.array(image_data)
         box_data = np.array(box_data)
         y_true = preprocess_true_boxes(box_data, input_shape, anchors, num_classes)
-        yield [image_data, *y_true], np.zeros(batch_size)
+        yield (image_data, *y_true)
 
-    tf.TensorShape()
 
 def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, num_classes):
     n = len(annotation_lines)
     if n == 0 or batch_size <= 0: return None
-    return data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes)
+    generator = data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes)
 
+    return tf.data.Dataset.from_generator(
+        lambda: generator
+        , output_types=(tf.float32, tf.float32, tf.float32, tf.float32,)
+        , output_shapes=(
+            tf.TensorShape([None, 416, 416, 3])
+            , tf.TensorShape([None, 13, 13, 3, 7])
+            , tf.TensorShape((None, 26, 26, 3, 7))
+            , tf.TensorShape((None, 52, 52, 3, 7))
+        )
+    )
 
 if __name__ == '__main__':
     _main()

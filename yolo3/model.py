@@ -15,6 +15,7 @@ from yolo3.utils import compose
 import pandas as pd
 import numpy as np
 import collections
+from datetime import datetime
 
 MODEL_GLOBALS = collections.namedtuple("Varibles"
                                        , "centers"
@@ -474,7 +475,7 @@ def box_iou(b1, b2):
     return iou
 
 
-def yolo_loss(args, anchors, num_classes, update_callback=None, ignore_thresh=.5, print_loss=True, summary_loss=True):
+def yolo_loss(args, anchors, num_classes, update_callback=None, ignore_thresh=.5, print_loss=True,prefix='logs/train/'):
     '''Return yolo_loss tensor
 
      Parameters
@@ -490,12 +491,13 @@ def yolo_loss(args, anchors, num_classes, update_callback=None, ignore_thresh=.5
      loss: tensor, shape=(1,)
 
      '''
-    loss = _yolo_loss(args, anchors, num_classes, update_callback, ignore_thresh, print_loss, summary_loss)
+    loss = _yolo_loss(args, anchors, num_classes, ignore_thresh, print_loss, prefix)
 
     return loss
 
 
-def _yolo_loss(args, anchors, num_classes, update_callback=None, ignore_thresh=.5, print_loss=False, summary_loss=True):
+def _yolo_loss(args, anchors, num_classes, ignore_thresh, print_loss,
+               prefix):
     num_layers = len(anchors) // 3  # default setting
     yolo_outputs = args[:num_layers]
     y_true = args[2 * num_layers:]
@@ -568,18 +570,26 @@ def _yolo_loss(args, anchors, num_classes, update_callback=None, ignore_thresh=.
                  # + multi_class_loss
                  )
 
-    if print_loss:
-        def format(label, tensors):
-            content_data = zip(label.split(","), tensors)
-            return content_data
+    def format(label, tensors):
+        content_data = zip(label.split(","), tensors)
+        return content_data
 
+    if print_loss:
         print_op = tf.print(
             *format("[xy_loss, wh_loss, confidence_loss, class_loss, multi_class_loss]"
                     , [xy_loss, wh_loss, confidence_loss, class_loss
-                        # , multi_class_loss
+                       # , multi_class_loss
                        ]),
             output_stream=sys.stdout)
         with tf.control_dependencies([print_op]):
             loss = loss * 1.0
+
+    train_summary_writer = tf.summary.create_file_writer(prefix + datetime.now().strftime("%Y%m%d-%H%M%S"))
+    with train_summary_writer.as_default():
+        for (title, x) in format("xy_loss, wh_loss, confidence_loss, class_loss, multi_class_loss"
+                , [xy_loss, wh_loss, confidence_loss, class_loss
+                   # , multi_class_loss
+                   ]):
+            tf.summary.scalar(title, x)
 
     return loss
