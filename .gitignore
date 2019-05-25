@@ -111,3 +111,4 @@ ENV/
 data
 *weights*
 
+*tfmodel

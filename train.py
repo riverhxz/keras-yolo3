@@ -40,8 +40,10 @@ def _main():
     num_val = int(len(lines) * val_split)
     num_train = len(lines) - num_val
 
-    num_val = 4
-    num_train = 8
+    # save_interval = 10
+    # num_val = 1
+    # num_train = 1
+
     batch_size = 4
     train_data = data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes)
     eval_data = data_generator_wrapper(lines[num_train:num_train + num_val], batch_size, input_shape, anchors,
@@ -78,7 +80,6 @@ def _main():
                 loss = train_step(image, y1, y2, y3)
                 tbar.update(1)
                 tbar.set_description("loss={:.3f}".format(loss))
-
         val_loss = 0
         for x in eval_data:
             image, y1, y2, y3 = x
@@ -87,7 +88,8 @@ def _main():
         val_loss = val_loss / num_val
         print("val_loss:", val_loss)
 
-        tf.saved_model.save(model, "model_data", datetime.now().strftime("%Y%m%d-%H%M%S"))
+        tf.saved_model.save(body, "model_data" )
+
 
 
 def extends(true_class_probs):
@@ -228,9 +230,7 @@ def loss_wrapper(outputs, pred, anchors, num_classes):
 def data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes):
     '''data generator for fit_generator'''
     n = len(annotation_lines)
-    i = 0
-    # while True:
-    for i in range(n)
+    for i in range(n):
         image_data = []
         box_data = []
         for b in range(batch_size):
