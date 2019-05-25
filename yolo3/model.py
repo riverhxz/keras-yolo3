@@ -544,12 +544,11 @@ def _yolo_loss(args, anchors, num_classes, ignore_thresh, print_loss,
         with tf.control_dependencies([print_op]):
             loss = loss * 1.0
 
-    train_summary_writer = tf.summary.create_file_writer(prefix + datetime.now().strftime("%Y%m%d-%H%M%S"))
-    with train_summary_writer.as_default():
-        for (title, x) in format("xy_loss, wh_loss, confidence_loss, class_loss, multi_class_loss"
+
+    losses = dict(format("xy_loss, wh_loss, confidence_loss, class_loss, multi_class_loss"
                 , [xy_loss, wh_loss, confidence_loss, class_loss
                    # , multi_class_loss
-                   ]):
-            tf.summary.scalar(title, x)
+                   ]))
 
-    return loss
+
+    return loss, losses

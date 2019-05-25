@@ -40,7 +40,7 @@ def _main():
     num_val = int(len(lines) * val_split)
     num_train = len(lines) - num_val
 
-    # save_interval = 10
+    save_interval = 10
     # num_val = 4
     # num_train = 4
     batch_size = 4
@@ -56,12 +56,20 @@ def _main():
     num_epoch = 10
     optimizer = tf.keras.optimizers.Adam()
     tf.summary.experimental.set_step(0)
+    import os
+    def write_loss(path, **kwargs):
+        train_summary_writer = tf.summary.create_file_writer(
+            os.path.join(path, datetime.now().strftime("%Y%m%d-%H%M%S")))
+        with train_summary_writer.as_default():
+            for k, v in {}.items():
+                tf.summary.scalar(k, v)
 
     def train_step(image, y1, y2, y3):
 
         with tf.GradientTape() as tape:
             outputs = body(image)
-            loss = loss_wrapper(outputs, [y1, y2, y3], anchors, num_classes)
+            loss, losses = loss_wrapper(outputs, [y1, y2, y3], anchors, num_classes)
+            write_loss("logs/train", **losses)
             grads = tape.gradient(loss, body.trainable_weights)
             optimizer.apply_gradients(zip(grads, body.trainable_variables))
             return loss
@@ -69,8 +77,10 @@ def _main():
     def evaluate_step(image, y1, y2, y3):
         with tf.GradientTape() as tape:
             outputs = body(image)
-            loss = loss_wrapper(outputs, [y1, y2, y3], anchors, num_classes)
+            loss, losses = loss_wrapper(outputs, [y1, y2, y3], anchors, num_classes)
+            write_loss("logs/test", **losses)
             return loss
+
 
     for epoch in range(num_epoch):
         print("epoch:", epoch)
@@ -85,11 +95,10 @@ def _main():
             image, y1, y2, y3 = x
             val_loss += evaluate_step(image, y1, y2, y3)
 
-        val_loss = val_loss / num_val
+        val_loss = val_loss / num_val * batch_size
         print("val_loss:", val_loss)
 
-        tf.saved_model.save(body, "model_data/tfmodel" )
-
+        tf.saved_model.save(body, "model_data/tfmodel")
 
 
 def extends(true_class_probs):
