@@ -44,6 +44,10 @@ def _main():
     num_val = int(num_train * 0.2)
     # num_train = 4
     batch_size = 4
+    #
+    # num_val = 1
+    # num_train = 1
+    # batch_size = 1
 
     train_data = data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes)
     eval_data = data_generator_wrapper(lines[num_train:num_train + num_val], batch_size, input_shape, anchors,
@@ -58,15 +62,16 @@ def _main():
     tf.summary.experimental.set_step(0)
     import os
 
-    test_summary_writer = tf.summary.create_file_writer(os.path.join("logs/test/", datetime.now().strftime("%Y%m%d-%H%M%S")))
-    train_summary_writer = tf.summary.create_file_writer(os.path.join("logs/train/", datetime.now().strftime("%Y%m%d-%H%M%S")))
-    def write_loss(test_summary_writer, **kwargs):
-        with train_summary_writer.as_default():
-            for k, v in {}.items():
-                tf.summary.scalar(k, v)
+    step = 0
+    test_summary_writer = tf.summary.create_file_writer(os.path.join("logs/test/", datetime.now().strftime("%Y%m%d-%H%M%S")), )
+    train_summary_writer = tf.summary.create_file_writer(os.path.join("logs/train/", datetime.now().strftime("%Y%m%d-%H%M%S")),)
+
+    def write_loss(writer, **kwargs):
+        with writer.as_default():
+            for k, v in kwargs.items():
+                tf.summary.scalar(k, v, step=step)
 
     def train_step(image, y1, y2, y3):
-
         with tf.GradientTape() as tape:
             outputs = body(image)
             loss, losses = loss_wrapper(outputs, [y1, y2, y3], anchors, num_classes)
@@ -82,7 +87,6 @@ def _main():
             write_loss(test_summary_writer, **losses)
             return loss
 
-
     for epoch in range(num_epoch):
         print("epoch:", epoch)
         with tqdm(train_data, total=num_train // batch_size) as tbar:
@@ -91,6 +95,7 @@ def _main():
                 loss = train_step(image, y1, y2, y3)
                 tbar.update(1)
                 tbar.set_description("loss={:.3f}".format(loss))
+                step = step + 1
         val_loss = 0
         for x in eval_data.take(num_val // batch_size):
             image, y1, y2, y3 = x
@@ -99,7 +104,8 @@ def _main():
         val_loss = val_loss / num_val * batch_size
         print("val_loss:", val_loss)
 
-        tf.saved_model.save(body, "model_data/tfmodel")
+        # tf.saved_model.save(body, "model_data/tfmodel")
+
 
 
 def extends(true_class_probs):
