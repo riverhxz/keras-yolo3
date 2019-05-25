@@ -5,7 +5,7 @@ from tqdm import *
 
 
 import numpy as np
-import tensorflow.python.keras.backend as K
+from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.layers import Input, Lambda
 from tensorflow.python.keras.models import Model
 import tensorflow as tf
