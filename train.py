@@ -3,7 +3,6 @@ Retrain the YOLO model for your own dataset.
 """
 from tqdm import *
 
-
 import numpy as np
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.layers import Input, Lambda
@@ -15,6 +14,7 @@ from yolo3.model import preprocess_true_boxes, yolo_body, tiny_yolo_body, yolo_l
 from yolo3.utils import get_random_data
 from datetime import datetime
 from tqdm import *
+
 
 def _main():
     from train import get_classes, get_anchors
@@ -42,12 +42,11 @@ def _main():
 
     batch_size = 4
     train_data = data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes)
-    eval_data  = data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors, num_classes)
+    eval_data = data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors, num_classes)
 
     body = model_body(input_shape, anchors, num_classes, None,
                       freeze_body=2,
                       weights_path='model_data/darknet53.weights.h5')
-
 
     num_epoch = 10
     optimizer = tf.keras.optimizers.Adam()
@@ -91,6 +90,7 @@ def extends(true_class_probs):
 def moveing_avg(variable, value, update_weight=0.05):
     return variable.assign(variable * (1 - update_weight) + update_weight * value)
 
+
 def update(center, value, keys):
     z = extends(keys)
     ez = tf.cast(tf.expand_dims(z, 4), value[0].dtype)
@@ -98,6 +98,7 @@ def update(center, value, keys):
     reshape_value = tf.reshape(value, [*v_shape[:-1], 1, v_shape[-1]])
     group_bys = tf.reduce_mean(ez * reshape_value, axis=[0, 1, 2])
     return moveing_avg(center, group_bys)
+
 
 def update_centers():
     gap = outputs[3:6]
@@ -250,6 +251,7 @@ def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, n
             , tf.TensorShape((None, 52, 52, 3, 7))
         )
     )
+
 
 if __name__ == '__main__':
     _main()
