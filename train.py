@@ -40,9 +40,12 @@ def _main():
     num_val = int(len(lines) * val_split)
     num_train = len(lines) - num_val
 
+    num_val = 4
+    num_train = 8
     batch_size = 4
     train_data = data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes)
-    eval_data = data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors, num_classes)
+    eval_data = data_generator_wrapper(lines[num_train:num_train + num_val], batch_size, input_shape, anchors,
+                                       num_classes)
 
     body = model_body(input_shape, anchors, num_classes, None,
                       freeze_body=2,
@@ -51,7 +54,6 @@ def _main():
     num_epoch = 10
     optimizer = tf.keras.optimizers.Adam()
     tf.summary.experimental.set_step(0)
-    val_step = 10
 
     def train_step(image, y1, y2, y3):
 
@@ -69,6 +71,7 @@ def _main():
             return loss
 
     for epoch in range(num_epoch):
+        print("epoch:", epoch)
         with tqdm(train_data, total=num_train / batch_size) as tbar:
             for x in train_data:
                 image, y1, y2, y3 = x
@@ -76,9 +79,15 @@ def _main():
                 tbar.update(1)
                 tbar.set_description("loss={:.3f}".format(loss))
 
-        for x in range(val_step):
+        val_loss = 0
+        for x in eval_data:
             image, y1, y2, y3 = x
-            evaluate_step(image, y1, y2, y3)
+            val_loss += evaluate_step(image, y1, y2, y3)
+
+        val_loss = val_loss / num_val
+        print("val_loss:", val_loss)
+
+        tf.saved_model.save(model, "model_data", datetime.now().strftime("%Y%m%d-%H%M%S"))
 
 
 def extends(true_class_probs):
@@ -220,7 +229,8 @@ def data_generator(annotation_lines, batch_size, input_shape, anchors, num_class
     '''data generator for fit_generator'''
     n = len(annotation_lines)
     i = 0
-    while True:
+    # while True:
+    for i in range(n)
         image_data = []
         box_data = []
         for b in range(batch_size):
