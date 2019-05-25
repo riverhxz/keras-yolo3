@@ -41,7 +41,7 @@ def _main():
     num_train = len(lines) - num_val
 
     save_interval = 10
-    # num_val = 4
+    num_val = int(num_train * 0.2)
     # num_train = 4
     batch_size = 4
 
