@@ -57,9 +57,10 @@ def _main():
     optimizer = tf.keras.optimizers.Adam()
     tf.summary.experimental.set_step(0)
     import os
-    def write_loss(path, **kwargs):
-        train_summary_writer = tf.summary.create_file_writer(
-            os.path.join(path, datetime.now().strftime("%Y%m%d-%H%M%S")))
+
+    test_summary_writer = tf.summary.create_file_writer(os.path.join("logs/test/", datetime.now().strftime("%Y%m%d-%H%M%S")))
+    train_summary_writer = tf.summary.create_file_writer(os.path.join("logs/train/", datetime.now().strftime("%Y%m%d-%H%M%S")))
+    def write_loss(test_summary_writer, **kwargs):
         with train_summary_writer.as_default():
             for k, v in {}.items():
                 tf.summary.scalar(k, v)
@@ -69,7 +70,7 @@ def _main():
         with tf.GradientTape() as tape:
             outputs = body(image)
             loss, losses = loss_wrapper(outputs, [y1, y2, y3], anchors, num_classes)
-            write_loss("logs/train", **losses)
+            write_loss(train_summary_writer, **losses)
             grads = tape.gradient(loss, body.trainable_weights)
             optimizer.apply_gradients(zip(grads, body.trainable_variables))
             return loss
@@ -78,7 +79,7 @@ def _main():
         with tf.GradientTape() as tape:
             outputs = body(image)
             loss, losses = loss_wrapper(outputs, [y1, y2, y3], anchors, num_classes)
-            write_loss("logs/test", **losses)
+            write_loss(test_summary_writer, **losses)
             return loss
 
 
