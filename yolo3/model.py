@@ -545,8 +545,8 @@ def _yolo_loss(args, anchors, num_classes, ignore_thresh, print_loss,
             loss = loss * 1.0
 
 
-    losses = dict(format("xy_loss, wh_loss, confidence_loss, class_loss, multi_class_loss"
-                , [xy_loss, wh_loss, confidence_loss, class_loss
+    losses = dict(format("xy_loss, wh_loss, confidence_loss, class_loss, loss"
+                , [xy_loss, wh_loss, confidence_loss, class_loss, loss
                    # , multi_class_loss
                    ]))
 

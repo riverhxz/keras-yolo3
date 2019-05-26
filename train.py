@@ -40,14 +40,9 @@ def _main():
     num_val = int(len(lines) * val_split)
     num_train = len(lines) - num_val
 
-    save_interval = 10
+    save_interval = 3
     num_val = int(num_train * 0.2)
-    # num_train = 4
     batch_size = 4
-    #
-    # num_val = 1
-    # num_train = 1
-    # batch_size = 1
 
     train_data = data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes)
     eval_data = data_generator_wrapper(lines[num_train:num_train + num_val], batch_size, input_shape, anchors,
@@ -105,6 +100,7 @@ def _main():
         val_loss = val_loss / num_val * batch_size
         print("val_loss:", val_loss)
 
+    if epoch + 1 % save_interval == 0:
         tf.saved_model.save(body, "model_data/tfmodel")
 
 
