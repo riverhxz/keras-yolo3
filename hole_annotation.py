@@ -2,7 +2,7 @@ import xml.etree.ElementTree
 import sys
 import os
 
-import tqdm
+# import tqdm
 
 classes = ["hole"]
 class2id = dict(zip(classes, range(len(classes))))
@@ -34,7 +34,7 @@ def main(argv):
     annotations_root_dir = input
     from glob import glob
     with open(output_fn, "w") as output_file:
-        for breed_dir in tqdm.tqdm(os.listdir(input)):
+        for breed_dir in os.listdir(input):
             print(breed_dir)
             for annotation_file in glob(os.path.join(input, breed_dir, "*.txt")):
                 annotation = parse_annotation(annotation_file)
