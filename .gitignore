@@ -4,12 +4,14 @@
 *.h5
 logs/
 *_test.py
+data
+logs
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-
+*.ipynb
 # C extensions
 *.so
 
@@ -106,3 +108,4 @@ ENV/
 
 # mypy
 .mypy_cache/
+.ipynb_checkpoints
