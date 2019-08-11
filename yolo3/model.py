@@ -15,7 +15,7 @@ from yolo3.utils import compose
 
 import sys
 import inspect
-
+import tensorflow as tf
 
 def debug(*args):
     pass
@@ -169,7 +169,10 @@ def yolo_body_adain(inputs, needle_model, num_anchors, num_classes):
 
     style = needle_model.outputs[0]
 
+
     x = adain_layer(darknet.outputs[0], style)
+
+    x = Lambda(lambda a:tf.Print(a, [darknet.outputs[0], style], "\nmsg1:"))(x)
     x, y1 = make_last_layers(x, 512, num_anchors * (num_classes + 5))
 
     x = compose(
@@ -177,16 +180,19 @@ def yolo_body_adain(inputs, needle_model, num_anchors, num_classes):
         UpSampling2D(2))(x)
     x = Concatenate()([x, darknet.layers[152].output])
 
-    x = adain_layer(x, style)
+    # x = adain_layer(x, style)
+
+    x = Lambda(lambda a:tf.Print(a, [a, style], "\nmsg1:"))(x)
     x, y2 = make_last_layers(x, 256, num_anchors * (num_classes + 5))
 
     x = compose(
         DarknetConv2D_BN_Leaky(128, (1, 1)),
         UpSampling2D(2))(x)
     x = Concatenate()([x, darknet.layers[92].output])
-    x = adain_layer(x, style)
-    x, y3 = make_last_layers(x, 128, num_anchors * (num_classes + 5))
+    # x = adain_layer(x, style)
 
+    x = Lambda(lambda a:tf.Print(a, [a, style], "\nmsg1:"))(x)
+    x, y3 = make_last_layers(x, 128, num_anchors * (num_classes + 5))
     return Model([inputs] + needle_model.inputs, [y1, y2, y3])
 
 
@@ -236,7 +242,7 @@ def needle_preprocess(max_box_length=10, image_size=64):
         x = K.reshape(x,
                       [-1, max_box_length, needle_embeding_shape[1], needle_embeding_shape[2],
                        needle_embeding_shape[3]])
-        import tensorflow as tf
+
         mask = tf.sequence_mask(K.squeeze(needle_input_num, -1), max_box_length, dtype=tf.float32)
         for _ in range(3):
             mask = K.expand_dims(mask, -1)
@@ -572,7 +578,7 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
         confidence_loss = K.sum(confidence_loss) / mf
         class_loss = K.sum(class_loss) / mf
         loss += xy_loss + wh_loss + confidence_loss + class_loss
-        if print_loss:
-            loss = tf.Print(loss, [loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask)],
+        if True:
+            loss = tf.Print(loss, [K.sum(grid), K.sum(raw_pred), K.sum(pred_xy), K.sum(pred_wh),loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask)],
                             message='loss: ')
     return loss

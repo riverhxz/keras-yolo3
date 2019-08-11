@@ -109,3 +109,5 @@ ENV/
 # mypy
 .mypy_cache/
 .ipynb_checkpoints
+.idea/
+.idea/*
