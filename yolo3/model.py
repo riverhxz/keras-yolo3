@@ -11,11 +11,14 @@ from keras.layers.normalization import BatchNormalization
 from keras.models import Model
 from keras.regularizers import l2
 
+from keras.layers import Layer
+
 from yolo3.utils import compose
 
 import sys
 import inspect
 import tensorflow as tf
+
 
 def debug(*args):
     pass
@@ -69,10 +72,15 @@ def darknet_body(x):
 def make_last_layers(x, num_filters, out_filters):
     '''6 Conv2D_BN_Leaky layers followed by a Conv2D_linear layer'''
     x = compose(
+        Lambda(lambda a: tf.Print(a, [K.shape(a), K.max(a), K.min(a), K.min(K.abs(a))], "l0")),
         DarknetConv2D_BN_Leaky(num_filters, (1, 1)),
+        Lambda(lambda a: tf.Print(a,[K.shape(a), K.max(a),K.min(a),K.min(K.abs(a))], "l1")),
         DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
+        Lambda(lambda a: tf.Print(a, [K.shape(a), K.max(a), K.min(a), K.min(K.abs(a))],"l2")),
         DarknetConv2D_BN_Leaky(num_filters, (1, 1)),
+        Lambda(lambda a: tf.Print(a, [K.shape(a), K.max(a), K.min(a), K.min(K.abs(a))],"l3")),
         DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
+        Lambda(lambda a: tf.Print(a, [K.shape(a), K.max(a), K.min(a), K.min(K.abs(a))],"l4")),
         DarknetConv2D_BN_Leaky(num_filters, (1, 1)))(x)
     y = compose(
         DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
@@ -101,9 +109,6 @@ def yolo_body(inputs, num_anchors, num_classes):
     return Model(inputs, [y1, y2, y3])
 
 
-from keras.layers import Layer
-
-
 def adain(x):
     content_features, style_features = x
     return _adain(content_features, style_features)
@@ -118,19 +123,25 @@ def _adain(content_features, style_features, epsilon=1e-5):
     shape = K.get_variable_shape(content_features)
     fout_dim = shape[-1]
     debug('style_features', style_features)
-    gap = K.sum(style_features, axis=[1, 2], keepdims=True)
+    gap = K.mean(style_features, axis=[1, 2], keepdims=True)
     debug('gap', gap)
     new_gap = compose(
-        DarknetConv2D_BN_Leaky(fout_dim * 2, (1, 1)),
-        # DarknetConv2D_BN_Leaky(fout_dim * 4, (1, 1)),
-        # DarknetConv2D_BN_Leaky(fout_dim * 2, (1, 1)),
+        Conv2D(fout_dim * 2, (1, 1), activation='relu'),
+        Conv2D(fout_dim * 4, (1, 1), activation='relu'),
+        Conv2D(fout_dim * 2, (1, 1), activation='relu'),
     )(gap)
     debug('new_gap', new_gap)
+
     style_mean, style_variance = tf.split(new_gap, 2, axis=3)
     content_mean, content_variance = tf.nn.moments(content_features, [1, 2], keep_dims=True)
     normalized_content_features = tf.nn.batch_normalization(content_features, content_mean,
                                                             content_variance, style_mean,
                                                             style_variance, epsilon)
+    BatchNormalization
+    normalized_content_features = Lambda(lambda a: tf.Print(a, [normalized_content_features, content_features, content_mean
+        , content_variance, style_mean, style_variance, gap , new_gap],
+                                  "\n adain:"))(normalized_content_features)
+
     return normalized_content_features
 
 
@@ -169,20 +180,22 @@ def yolo_body_adain(inputs, needle_model, num_anchors, num_classes):
 
     style = needle_model.outputs[0]
 
+    x = darknet.outputs[0]
+    # x = adain_layer(darknet.outputs[0], style)
 
-    x = adain_layer(darknet.outputs[0], style)
-
-    x = Lambda(lambda a:tf.Print(a, [darknet.outputs[0], style], "\nmsg1:"))(x)
+    x = Lambda(lambda a: tf.Print(a, [darknet.outputs[0], style, x, K.shape(x), K.max(x),K.min(x),K.min(K.abs(x))], "\n before1:"))(x)
+    print('shape of k',K.get_variable_shape(x),K.get_variable_shape(darknet.output))
     x, y1 = make_last_layers(x, 512, num_anchors * (num_classes + 5))
-
+    x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\nmake_last_layers:"))(x)
     x = compose(
         DarknetConv2D_BN_Leaky(256, (1, 1)),
         UpSampling2D(2))(x)
+    x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\ncompose:"))(x)
     x = Concatenate()([x, darknet.layers[152].output])
 
     # x = adain_layer(x, style)
 
-    x = Lambda(lambda a:tf.Print(a, [a, style], "\nmsg1:"))(x)
+    x = Lambda(lambda a: tf.Print(a, [a], "\nconcate:"))(x)
     x, y2 = make_last_layers(x, 256, num_anchors * (num_classes + 5))
 
     x = compose(
@@ -191,7 +204,7 @@ def yolo_body_adain(inputs, needle_model, num_anchors, num_classes):
     x = Concatenate()([x, darknet.layers[92].output])
     # x = adain_layer(x, style)
 
-    x = Lambda(lambda a:tf.Print(a, [a, style], "\nmsg1:"))(x)
+    x = Lambda(lambda a: tf.Print(a, [a, style], "\nmsg1:"))(x)
     x, y3 = make_last_layers(x, 128, num_anchors * (num_classes + 5))
     return Model([inputs] + needle_model.inputs, [y1, y2, y3])
 
@@ -255,8 +268,12 @@ def needle_preprocess(max_box_length=10, image_size=64):
         debug(sys._getframe().f_lineno, x)
         return x
 
-    out = Lambda(needle_reducer)([needle_embeding.output, needle_input_num])
-    debug("out", out)
+    embedding_out = needle_embeding.output
+    embedding_out = Lambda(
+        lambda a: tf.Print(a, [a, embedding_out, needle_input, needle_input_num], "\nneedle_embeding:"))(embedding_out)
+
+    out = Lambda(needle_reducer)([embedding_out, needle_input_num])
+
     return Model([needle_input, needle_input_num], [out])
 
 
@@ -579,6 +596,7 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
         class_loss = K.sum(class_loss) / mf
         loss += xy_loss + wh_loss + confidence_loss + class_loss
         if True:
-            loss = tf.Print(loss, [K.sum(grid), K.sum(raw_pred), K.sum(pred_xy), K.sum(pred_wh),loss, xy_loss, wh_loss, confidence_loss, class_loss, K.sum(ignore_mask)],
+            loss = tf.Print(loss, [K.sum(grid), K.sum(raw_pred), K.sum(pred_xy), K.sum(pred_wh), loss, xy_loss, wh_loss,
+                                   confidence_loss, class_loss, K.sum(ignore_mask)],
                             message='loss: ')
     return loss
