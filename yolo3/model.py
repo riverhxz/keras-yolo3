@@ -21,8 +21,10 @@ import tensorflow as tf
 
 
 def debug(*args):
-    func = inspect.currentframe().f_back.f_code
-    print(func.co_firstlineno, *args)
+
+    # func = inspect.currentframe().f_back.f_code
+    # print(func.co_firstlineno, *args)
+    pass
 
 
 @wraps(Conv2D)
@@ -224,11 +226,9 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, num_anchors, num_cl
 
     style = SwitchLayer()(needle_embedding)
     x = darknet.outputs[0]
-    # x = adain_layer(darknet.outputs[0], style)
     x = Adain(style)(x)
     print('shape of k', K.get_variable_shape(x), K.get_variable_shape(darknet.output))
     x, y1 = make_last_layers(x, 512, num_anchors * (num_classes + 5))
-    # x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\nmake_last_layers:"))(x)
     x = compose(
         DarknetConv2D_BN_Leaky(256, (1, 1)),
         UpSampling2D(2))(x)
