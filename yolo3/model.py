@@ -1,12 +1,12 @@
 """YOLO_v3 Model Defined in Keras."""
 
 from functools import wraps
-
+from keras.engine.base_layer import Layer, InputSpec
 import numpy as np
 import tensorflow as tf
 from keras import backend as K
 from keras.layers import Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate, MaxPooling2D, Reshape, Lambda, Input
-from keras.layers.advanced_activations import LeakyReLU
+from keras.layers.advanced_activations import LeakyReLU, ReLU
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model
 from keras.regularizers import l2
@@ -72,15 +72,10 @@ def darknet_body(x):
 def make_last_layers(x, num_filters, out_filters):
     '''6 Conv2D_BN_Leaky layers followed by a Conv2D_linear layer'''
     x = compose(
-        Lambda(lambda a: tf.Print(a, [K.shape(a), K.max(a), K.min(a), K.min(K.abs(a))], "l0")),
         DarknetConv2D_BN_Leaky(num_filters, (1, 1)),
-        Lambda(lambda a: tf.Print(a,[K.shape(a), K.max(a),K.min(a),K.min(K.abs(a))], "l1")),
         DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
-        Lambda(lambda a: tf.Print(a, [K.shape(a), K.max(a), K.min(a), K.min(K.abs(a))],"l2")),
         DarknetConv2D_BN_Leaky(num_filters, (1, 1)),
-        Lambda(lambda a: tf.Print(a, [K.shape(a), K.max(a), K.min(a), K.min(K.abs(a))],"l3")),
         DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
-        Lambda(lambda a: tf.Print(a, [K.shape(a), K.max(a), K.min(a), K.min(K.abs(a))],"l4")),
         DarknetConv2D_BN_Leaky(num_filters, (1, 1)))(x)
     y = compose(
         DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
@@ -108,105 +103,115 @@ def yolo_body(inputs, num_anchors, num_classes):
 
     return Model(inputs, [y1, y2, y3])
 
+class Adain(BatchNormalization):
+    def __init__(self, style_coding,
+                 **kwargs):
+        super(Adain, self).__init__(scale=False, center=False, **kwargs)
+        self.style_coding = style_coding
 
-def adain(x):
-    content_features, style_features = x
-    return _adain(content_features, style_features)
+    def call(self, inputs, training=None):
+        input_shape = K.int_shape(inputs)
+        fout_dim = input_shape[-1]
+        gap = K.mean(self.style_coding, axis=[1, 2], keepdims=True)
+        new_gap = compose(
+            Conv2D(fout_dim * 2, (1, 1), activation='relu'),
+            Conv2D(fout_dim * 2, (1, 1), activation='relu'),
+            Conv2D(fout_dim * 2, (1, 1), activation='relu'),
+        )(gap)
+        reduction_axes = [1, 2]
+        style_mean, style_var = tf.split(new_gap, 2, axis=3)
+
+        def batch_norm(x, beta, gamma, reduce_axis, epsilon=1e-5):
+            m, v = tf.nn.moments(x, reduce_axis, keep_dims=True)
+            normed = tf.nn.batch_normalization(x, m, v, beta, gamma, epsilon)
+            return normed, m, v
+
+        def _expand_dim_as(x, y):
+            diff = len(K.get_variable_shape(x)) - len(K.get_variable_shape(y))
+            for _ in range(diff):
+                x = tf.expand_dims(x, 0)
+            return x
+
+        def normalize_inference():
+
+            mean = _expand_dim_as(self.moving_mean, inputs)
+            var = _expand_dim_as(self.moving_variance, inputs)
+            return tf.nn.batch_normalization(
+                inputs,
+                mean,
+                var,
+                style_mean,
+                style_var,
+                self.epsilon)
+
+        # If the learning phase is *static* and set to inference:
+        if training in {0, False}:
+            return normalize_inference()
+
+        # If the learning is either dynamic, or set to training:
+        normed_training, _, _ = batch_norm(
+            inputs, style_mean, style_var, reduction_axes,
+            epsilon=self.epsilon)
+
+        reduction_axes = [0, 1, 2]
+        _, mean, variance = batch_norm(
+            inputs, style_mean, style_var, reduction_axes,
+            epsilon=self.epsilon)
+
+        if K.backend() != 'cntk':
+            sample_size = K.prod([K.shape(inputs)[axis]
+                                  for axis in reduction_axes])
+            sample_size = K.cast(sample_size, dtype=K.dtype(inputs))
+
+            # sample variance - unbiased estimator of population variance
+            variance *= sample_size / (sample_size - (1.0 + self.epsilon))
+
+        self.add_update([K.moving_average_update(self.moving_mean,
+                                                 tf.squeeze(mean),
+                                                 self.momentum),
+                         K.moving_average_update(self.moving_variance,
+                                                 tf.squeeze(variance),
+                                                 self.momentum)],
+                        inputs)
+
+        # Pick the normalized form corresponding to the training phase.
+        return K.in_train_phase(normed_training,
+                                normalize_inference,
+                                training=training)
 
 
-def _adain(content_features, style_features, epsilon=1e-5):
-    '''
-    Borrowed from https://github.com/jonrei/tf-AdaIN
-    Normalizes the `content_features` with scaling and offset from `style_features`.
-    See "5. Adaptive Instance Normalization" in https://arxiv.org/abs/1703.06868 for details.
-    '''
-    shape = K.get_variable_shape(content_features)
-    fout_dim = shape[-1]
-    debug('style_features', style_features)
-    gap = K.mean(style_features, axis=[1, 2], keepdims=True)
-    debug('gap', gap)
-    new_gap = compose(
-        Conv2D(fout_dim * 2, (1, 1), activation='relu'),
-        Conv2D(fout_dim * 4, (1, 1), activation='relu'),
-        Conv2D(fout_dim * 2, (1, 1), activation='relu'),
-    )(gap)
-    debug('new_gap', new_gap)
-
-    style_mean, style_variance = tf.split(new_gap, 2, axis=3)
-    content_mean, content_variance = tf.nn.moments(content_features, [1, 2], keep_dims=True)
-    normalized_content_features = tf.nn.batch_normalization(content_features, content_mean,
-                                                            content_variance, style_mean,
-                                                            style_variance, epsilon)
-    BatchNormalization
-    normalized_content_features = Lambda(lambda a: tf.Print(a, [normalized_content_features, content_features, content_mean
-        , content_variance, style_mean, style_variance, gap , new_gap],
-                                  "\n adain:"))(normalized_content_features)
-
-    return normalized_content_features
-
-
-# class MyLayer(Layer):
-#
-#     def __init__(self, **kwargs):
-#         super(MyLayer, self).__init__(**kwargs)
-#
-#     def build(self, input_shape):
-#         assert isinstance(input_shape, list)
-#         # Create a trainable weight variable for this layer.
-#         super(MyLayer, self).build(input_shape)  # Be sure to call this at the end
-#
-#     @classmethod
-#
-#
-#     def call(self, x):
-#         # assert isinstance(x, list)
-#         a, b = x
-#         debug(type(a),type(b))
-#         return adain(a,b)
-#
-#     def compute_output_shape(self, input_shape):
-#         assert isinstance(input_shape, list)
-#         shape_a, shape_b = input_shape
-#         return shape_a
-
-
-def yolo_body_adain(inputs, needle_model, num_anchors, num_classes):
+def yolo_body_adain(inputs, needle_inputs, needle_embedding, num_anchors, num_classes):
     """Create YOLO_V3 model CNN body in Keras."""
     darknet = Model(inputs, darknet_body(inputs))
 
-    def adain_layer(content, style):
-        debug(content, style)
-        return Lambda(adain)([content, style])
-
-    style = needle_model.outputs[0]
+    style = needle_embedding
 
     x = darknet.outputs[0]
     # x = adain_layer(darknet.outputs[0], style)
-
-    x = Lambda(lambda a: tf.Print(a, [darknet.outputs[0], style, x, K.shape(x), K.max(x),K.min(x),K.min(K.abs(x))], "\n before1:"))(x)
-    print('shape of k',K.get_variable_shape(x),K.get_variable_shape(darknet.output))
+    x = Adain(style)(x)
+    print('shape of k', K.get_variable_shape(x), K.get_variable_shape(darknet.output))
     x, y1 = make_last_layers(x, 512, num_anchors * (num_classes + 5))
-    x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\nmake_last_layers:"))(x)
+    # x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\nmake_last_layers:"))(x)
     x = compose(
         DarknetConv2D_BN_Leaky(256, (1, 1)),
         UpSampling2D(2))(x)
-    x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\ncompose:"))(x)
+    # x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\ncompose:"))(x)
     x = Concatenate()([x, darknet.layers[152].output])
 
-    # x = adain_layer(x, style)
+    x = Adain(style)(x)
 
-    x = Lambda(lambda a: tf.Print(a, [a], "\nconcate:"))(x)
+    # x = Lambda(lambda a: tf.Print(a, [a], "\nconcate:"))(x)
     x, y2 = make_last_layers(x, 256, num_anchors * (num_classes + 5))
 
     x = compose(
         DarknetConv2D_BN_Leaky(128, (1, 1)),
         UpSampling2D(2))(x)
     x = Concatenate()([x, darknet.layers[92].output])
-    # x = adain_layer(x, style)
+    x = Adain(style)(x)
 
-    x = Lambda(lambda a: tf.Print(a, [a, style], "\nmsg1:"))(x)
+    # x = Lambda(lambda a: tf.Print(a, [a, style], "\nmsg1:"))(x)
     x, y3 = make_last_layers(x, 128, num_anchors * (num_classes + 5))
-    return Model([inputs] + needle_model.inputs, [y1, y2, y3])
+    return Model([inputs] + needle_inputs, [y1, y2, y3])
 
 
 def tiny_yolo_body(inputs, num_anchors, num_classes):
@@ -269,9 +274,6 @@ def needle_preprocess(max_box_length=10, image_size=64):
         return x
 
     embedding_out = needle_embeding.output
-    embedding_out = Lambda(
-        lambda a: tf.Print(a, [a, embedding_out, needle_input, needle_input_num], "\nneedle_embeding:"))(embedding_out)
-
     out = Lambda(needle_reducer)([embedding_out, needle_input_num])
 
     return Model([needle_input, needle_input_num], [out])
@@ -595,8 +597,8 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
         confidence_loss = K.sum(confidence_loss) / mf
         class_loss = K.sum(class_loss) / mf
         loss += xy_loss + wh_loss + confidence_loss + class_loss
-        if True:
-            loss = tf.Print(loss, [K.sum(grid), K.sum(raw_pred), K.sum(pred_xy), K.sum(pred_wh), loss, xy_loss, wh_loss,
-                                   confidence_loss, class_loss, K.sum(ignore_mask)],
+        if l == 1:
+            loss = tf.Print(loss, [ loss, xy_loss, wh_loss,
+                                   confidence_loss, class_loss],
                             message='loss: ')
     return loss

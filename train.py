@@ -8,6 +8,8 @@ from keras.layers import Input, Lambda
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
+from keras import initializers
+from keras.engine import Layer, InputSpec
 
 from yolo3.model import preprocess_true_boxes, yolo_body, yolo_loss, yolo_body_adain, needle_preprocess
 from yolo3.utils import get_random_data
@@ -47,31 +49,14 @@ def _main():
 
     # Train with frozen layers first, to get a stable loss.
     # Adjust num epochs to your dataset. This step is enough to obtain a not bad model.
-    if False:
-        model.compile(optimizer=Adam(lr=1e-3), loss={
-            # use custom yolo_loss Lambda layer.
-            'yolo_loss': lambda y_true, y_pred: y_pred})
-
-
-        batch_size = 32
-        print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
-        model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
-                            steps_per_epoch=max(1, num_train // batch_size),
-                            validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors,
-                                                                   num_classes),
-                            validation_steps=max(1, num_val // batch_size),
-                            epochs=50,
-                            initial_epoch=0,
-                            callbacks=[logging, checkpoint])
-        model.save_weights(log_dir + 'trained_weights_stage_1.h5')
 
     # Unfreeze and continue training, to fine-tune.
     # Train longer if the result is not good.
     if True:
         for i in range(len(model.layers)):
             model.layers[i].trainable = True
-        model.compile(optimizer=Adam(lr=1e-4),
-                      loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
+            model.compile(optimizer=Adam(lr=1e-5, clipvalue=1e1),
+                          loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
         print('Unfreeze all of the layers.')
 
         batch_size = 32  # note that more GPU memory is required after unfreezing the body
@@ -82,7 +67,7 @@ def _main():
                                                                    num_classes),
                             validation_steps=max(1, num_val // batch_size),
                             epochs=100,
-                            initial_epoch=50,
+                            initial_epoch=0,
                             callbacks=[logging, checkpoint, reduce_lr, early_stopping])
         model.save_weights(log_dir + 'trained_weights_final.h5')
 
@@ -105,8 +90,44 @@ def get_anchors(anchors_path):
     return np.array(anchors).reshape(-1, 2)
 
 
+class TransferLayer(Layer):
+    def __init__(self, create_model_body, momentum=0.99, **kwargs):
+        super(TransferLayer, self).__init__(**kwargs)
+        self.momentum = momentum
+        self.create_model_body = create_model_body
+
+    def build(self, input_shape):
+        dim = input_shape[-1]
+        # if dim is None:
+        #     raise ValueError('Axis ' + str(self.axis) + ' of '
+        #                                                 'input tensor should have a defined dimension '
+        #                                                 'but the layer received an input with shape ' +
+        #                      str(input_shape) + '.')
+        # self.input_spec = InputSpec(ndim=len(input_shape),
+        #                             axes={self.axis: dim})
+        shape = (dim,)
+
+        self.moving_style = self.add_weight(
+            shape=shape,
+            name='moving_style',
+            initializer=initializers.get("zeros"),
+            trainable=False)
+        self.built = True
+
+    def call(self, inputs, training=None):
+        train_body = self.create_model_body(inputs)
+        test_body = self.create_model_body(self.moving_style)
+        self.add_update([K.moving_average_update(self.moving_style,
+                                                 K.mean(inputs, 0),
+                                                 self.momentum)
+                         ]
+                        , inputs)
+
+        return K.in_train_phase(train_body, test_body, training=training)
+
+
 def create_model_adain(input_shape, anchors, num_classes, load_pretrained=True, freeze_body=2,
-                       weights_path='model_data/yolo_weights.h5', max_box_length=20,
+                       weights_path='logs/holes/ep132-loss114.564-val_loss122.172.h5', max_box_length=20,
                        needle_size=64):
     '''create the training model'''
     from keras.layers import Reshape
@@ -119,10 +140,11 @@ def create_model_adain(input_shape, anchors, num_classes, load_pretrained=True, 
                            num_anchors // 3, num_classes + 5)) for l in range(3)]
 
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
-
     image_input = Input(shape=(None, None, 3))
-    model_body = yolo_body_adain(image_input, needle_embedding, num_anchors // 3, num_classes)
+    model_body = TransferLayer(create_model_body=lambda x: yolo_body_adain(image_input, needle_embedding.inputs, x, num_anchors, num_classes))(
+        needle_embedding.output)
 
+    model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
     print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, num_classes))
 
     model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
