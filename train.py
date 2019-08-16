@@ -90,42 +90,6 @@ def get_anchors(anchors_path):
     return np.array(anchors).reshape(-1, 2)
 
 
-class TransferLayer(Layer):
-    def __init__(self, create_model_body, momentum=0.99, **kwargs):
-        super(TransferLayer, self).__init__(**kwargs)
-        self.momentum = momentum
-        self.create_model_body = create_model_body
-
-    def build(self, input_shape):
-        dim = input_shape[-1]
-        # if dim is None:
-        #     raise ValueError('Axis ' + str(self.axis) + ' of '
-        #                                                 'input tensor should have a defined dimension '
-        #                                                 'but the layer received an input with shape ' +
-        #                      str(input_shape) + '.')
-        # self.input_spec = InputSpec(ndim=len(input_shape),
-        #                             axes={self.axis: dim})
-        shape = (dim,)
-
-        self.moving_style = self.add_weight(
-            shape=shape,
-            name='moving_style',
-            initializer=initializers.get("zeros"),
-            trainable=False)
-        self.built = True
-
-    def call(self, inputs, training=None):
-        train_body = self.create_model_body(inputs)
-        test_body = self.create_model_body(self.moving_style)
-        self.add_update([K.moving_average_update(self.moving_style,
-                                                 K.mean(inputs, 0),
-                                                 self.momentum)
-                         ]
-                        , inputs)
-
-        return K.in_train_phase(train_body, test_body, training=training)
-
-
 def create_model_adain(input_shape, anchors, num_classes, load_pretrained=True, freeze_body=2,
                        weights_path='logs/holes/ep132-loss114.564-val_loss122.172.h5', max_box_length=20,
                        needle_size=64):
@@ -141,8 +105,7 @@ def create_model_adain(input_shape, anchors, num_classes, load_pretrained=True, 
 
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
     image_input = Input(shape=(None, None, 3))
-    model_body = TransferLayer(create_model_body=lambda x: yolo_body_adain(image_input, needle_embedding.inputs, x, num_anchors, num_classes))(
-        needle_embedding.output)
+    model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding, num_anchors, num_classes)
 
     model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
     print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, num_classes))

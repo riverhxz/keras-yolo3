@@ -21,9 +21,8 @@ import tensorflow as tf
 
 
 def debug(*args):
-    pass
-    # func = inspect.currentframe().f_back.f_code
-    # print(func.co_firstlineno, *args)
+    func = inspect.currentframe().f_back.f_code
+    print(func.co_firstlineno, *args)
 
 
 @wraps(Conv2D)
@@ -112,7 +111,10 @@ class Adain(BatchNormalization):
     def call(self, inputs, training=None):
         input_shape = K.int_shape(inputs)
         fout_dim = input_shape[-1]
-        gap = K.mean(self.style_coding, axis=[1, 2], keepdims=True)
+        gap = self.style_coding
+        for _ in range(2):
+            gap = K.expand_dims(gap,1)
+
         new_gap = compose(
             Conv2D(fout_dim * 2, (1, 1), activation='relu'),
             Conv2D(fout_dim * 2, (1, 1), activation='relu'),
@@ -180,12 +182,47 @@ class Adain(BatchNormalization):
                                 training=training)
 
 
+class SwitchLayer(Layer):
+    def __init__(self, create_model_body, momentum=0.99, **kwargs):
+        super(SwitchLayer, self).__init__(**kwargs)
+        self.momentum = momentum
+
+    def build(self, input_shape):
+        dim = input_shape[-1]
+        # if dim is None:
+        #     raise ValueError('Axis ' + str(self.axis) + ' of '
+        #                                                 'input tensor should have a defined dimension '
+        #                                                 'but the layer received an input with shape ' +
+        #                      str(input_shape) + '.')
+        # self.input_spec = InputSpec(ndim=len(input_shape),
+        #                             axes={self.axis: dim})
+        shape = (dim,)
+
+        self.moving_style = self.add_weight(
+            shape=shape,
+            name='moving_style',
+            initializer=initializers.get("zeros"),
+            trainable=False)
+        self.built = True
+
+    def call(self, inputs, training=None):
+        train_inputs = inputs
+        test_inputs = K.expand_dims(self.moving_style,0)
+        self.add_update([K.moving_average_update(self.moving_style,
+                                                 K.mean(inputs, 0),
+                                                 self.momentum)
+                         ]
+                        , inputs)
+
+        return K.in_train_phase(train_inputs, test_inputs, training=training)
+
+
+
 def yolo_body_adain(inputs, needle_inputs, needle_embedding, num_anchors, num_classes):
     """Create YOLO_V3 model CNN body in Keras."""
     darknet = Model(inputs, darknet_body(inputs))
 
-    style = needle_embedding
-
+    style = SwitchLayer()(needle_embedding)
     x = darknet.outputs[0]
     # x = adain_layer(darknet.outputs[0], style)
     x = Adain(style)(x)
@@ -267,9 +304,9 @@ def needle_preprocess(max_box_length=10, image_size=64):
         x = mask * x
 
         debug(sys._getframe().f_lineno, x)
-        for _ in range(2):
-            needle_input_num = tf.expand_dims(needle_input_num, -1)
-        x = K.sum(x, axis=1, keepdims=False) / needle_input_num
+        # for _ in range(2):
+        #     needle_input_num = tf.expand_dims(needle_input_num, -1)
+        x = K.sum(x, axis=[1,2,3], keepdims=False) / needle_input_num
         debug(sys._getframe().f_lineno, x)
         return x
 
