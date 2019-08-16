@@ -4,7 +4,7 @@ from functools import wraps
 from keras.engine.base_layer import Layer, InputSpec
 import numpy as np
 import tensorflow as tf
-from keras import backend as K
+from keras import backend as K, initializers
 from keras.layers import Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate, MaxPooling2D, Reshape, Lambda, Input
 from keras.layers.advanced_activations import LeakyReLU, ReLU
 from keras.layers.normalization import BatchNormalization
@@ -183,7 +183,7 @@ class Adain(BatchNormalization):
 
 
 class SwitchLayer(Layer):
-    def __init__(self, create_model_body, momentum=0.99, **kwargs):
+    def __init__(self, momentum=0.99, **kwargs):
         super(SwitchLayer, self).__init__(**kwargs)
         self.momentum = momentum
 
@@ -246,8 +246,10 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, num_anchors, num_cl
     x = Concatenate()([x, darknet.layers[92].output])
     x = Adain(style)(x)
 
-    # x = Lambda(lambda a: tf.Print(a, [a, style], "\nmsg1:"))(x)
     x, y3 = make_last_layers(x, 128, num_anchors * (num_classes + 5))
+
+    # y3 = Lambda(lambda a: tf.Print(a, [ tf.shape(a)], "\ntt:", summarize=10))(y3)
+
     return Model([inputs] + needle_inputs, [y1, y2, y3])
 
 
@@ -307,7 +309,9 @@ def needle_preprocess(max_box_length=10, image_size=64):
         # for _ in range(2):
         #     needle_input_num = tf.expand_dims(needle_input_num, -1)
         x = K.sum(x, axis=[1,2,3], keepdims=False) / needle_input_num
+
         debug(sys._getframe().f_lineno, x)
+        # x = Lambda(lambda a: tf.Print(a, [K.shape(a)], "\n needle_shape:"))(x)
         return x
 
     embedding_out = needle_embeding.output
@@ -594,7 +598,6 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
     for l in range(num_layers):
         object_mask = y_true[l][..., 4:5]
         true_class_probs = y_true[l][..., 5:]
-
         grid, raw_pred, pred_xy, pred_wh = yolo_head(yolo_outputs[l],
                                                      anchors[anchor_mask[l]], num_classes, input_shape, calc_loss=True)
         pred_box = K.concatenate([pred_xy, pred_wh])
