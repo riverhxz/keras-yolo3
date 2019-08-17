@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="68ebd662-f6ae-467a-90cd-7497c94b61ef" name="Default" comment="">
+      <change afterPath="$PROJECT_DIR$/docker/dockerfile" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/train.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolo3/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/model.py" afterDir="false" />
@@ -149,7 +150,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$USER_HOME$/anaconda3/envs/py36/lib/python3.6/site-packages/keras/engine/topology.py</url>
-          <line>615</line>
+          <line>5</line>
           <option name="timeStamp" value="10" />
         </line-breakpoint>
       </breakpoints>

@@ -20,7 +20,7 @@ def _main():
     log_dir = 'logs/holes/'
     classes_path = 'model_data/wood_board.txt'
     anchors_path = 'model_data/wood_anchors.txt'
-    weight_path = 'logs/holes/ep132-loss114.564-val_loss122.172.h5'
+    weight_path = 'logs/holes/trained_weights_final.h5'
     val_split = 0.1
     class_names = get_classes(classes_path)
     num_classes = len(class_names)
@@ -66,7 +66,7 @@ def _main():
                             validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors,
                                                                    num_classes),
                             validation_steps=max(1, num_val // batch_size),
-                            epochs=100,
+                            epochs=200,
                             initial_epoch=0,
                             callbacks=[logging, checkpoint, reduce_lr, early_stopping])
         model.save_weights(log_dir + 'trained_weights_final.h5')
@@ -106,7 +106,7 @@ def create_model_adain(input_shape, anchors, num_classes, load_pretrained=True, 
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
     image_input = Input(shape=(None, None, 3))
     model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, num_anchors //3 , num_classes)
-    # model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
+    model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
     print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, num_classes))
     model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
                         arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})(
