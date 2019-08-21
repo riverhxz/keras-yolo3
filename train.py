@@ -10,26 +10,28 @@ from keras.optimizers import Adam
 from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 from keras import initializers
 from keras.engine import Layer, InputSpec
-
+# from tensorflow.python.ops import gen_nccl_ops
 from yolo3.model import preprocess_true_boxes, yolo_body, yolo_loss, yolo_body_adain, needle_preprocess
 from yolo3.utils import get_random_data
 
 import horovod.keras as hvd
 
+import os
+
 hvd.init()
+os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
+
+
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
-config.gpu_options.visible_device_list = str(hvd.local_rank())
+config.gpu_options.visible_device_list = '0'
 K.set_session(tf.Session(config=config))
-
-
 def _main():
     # annotation_path = 'data/holes.csv'
     # log_dir = 'logs/holes/'
     # classes_path = 'model_data/wood_board.txt'
     # anchors_path = 'model_data/wood_anchors.txt'
     # weight_path = 'logs/holes/trained_weights_final.h5'
-
     annotation_path = 'data/stdogs/stdogs.csv'
     log_dir = 'logs/stdogs/'
     classes_path = 'model_data/stdogs_classes.txt'
@@ -79,7 +81,7 @@ def _main():
         optimizer = Adam(lr=1e-5 * hvd.size(), clipvalue=1e1)
         optimizer = hvd.DistributedOptimizer(optimizer)
 
-        model.compile(optimizer=Adam(lr=1e-5, clipvalue=1e1),
+        model.compile(optimizer=optimizer,
                       loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
         print('Unfreeze all of the layers.')
 
@@ -101,6 +103,7 @@ def _main():
                             validation_steps=max(1, num_val // batch_size),
                             epochs=epoch,
                             initial_epoch=0,
+                            
                             callbacks=callbacks)
         model.save_weights(log_dir + 'trained_weights_final.h5')
 

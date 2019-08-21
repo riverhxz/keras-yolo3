@@ -203,9 +203,10 @@ class SwitchLayer(Layer):
         self.built = True
 
     def call(self, inputs, training=None):
-        train_inputs = inputs
+
         indices = K.squeeze(self.needle_class, axis=1)
         test_inputs = K.gather(self.moving_style, indices)
+        train_inputs = inputs
         class_embedding = tf.math.segment_mean(inputs,  indices)
         def _scatter_moving_avg(ref, indice, updates, momentum=self.momentum):
 
@@ -216,8 +217,7 @@ class SwitchLayer(Layer):
 
         self.add_update([
             _scatter_moving_avg(self.moving_style, indices, class_embedding)
-        ]
-                        , inputs)
+        ], inputs)
 
         return K.in_train_phase(train_inputs, test_inputs, training=training)
 
