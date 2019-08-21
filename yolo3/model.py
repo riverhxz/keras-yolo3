@@ -523,6 +523,7 @@ def preprocess_true_boxes(true_boxes, input_shape, anchors, num_classes):
                     j = np.floor(true_boxes[b, t, 1] * grid_shapes[l][0]).astype('int32')
                     k = anchor_mask[l].index(n)
                     c = true_boxes[b, t, 4].astype('int32')
+
                     y_true[l][b, j, i, k, 0:4] = true_boxes[b, t, 0:4]
                     y_true[l][b, j, i, k, 4] = 1
                     y_true[l][b, j, i, k, 5 + c] = 1
@@ -632,15 +633,20 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
         confidence_loss = object_mask * K.binary_crossentropy(object_mask, raw_pred[..., 4:5], from_logits=True) + \
                           (1 - object_mask) * K.binary_crossentropy(object_mask, raw_pred[..., 4:5],
                                                                     from_logits=True) * ignore_mask
-        class_loss = object_mask * K.binary_crossentropy(true_class_probs, raw_pred[..., 5:], from_logits=True)
+        # class_loss = object_mask * K.binary_crossentropy(true_class_probs, raw_pred[..., 5:], from_logits=True)
 
         xy_loss = K.sum(xy_loss) / mf
         wh_loss = K.sum(wh_loss) / mf
         confidence_loss = K.sum(confidence_loss) / mf
-        class_loss = K.sum(class_loss) / mf
-        loss += xy_loss + wh_loss + confidence_loss + class_loss
+        # class_loss = K.sum(class_loss) / mf
+        loss += (
+                xy_loss + wh_loss + confidence_loss
+                #+ class_loss
+        )
         if False:
             loss = tf.Print(loss, [loss, xy_loss, wh_loss,
-                                   confidence_loss, class_loss],
+                                   confidence_loss
+                                    #,class_loss
+                                   ],
                             message='loss: ')
     return loss

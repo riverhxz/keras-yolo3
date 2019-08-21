@@ -14,13 +14,32 @@ from keras.engine import Layer, InputSpec
 from yolo3.model import preprocess_true_boxes, yolo_body, yolo_loss, yolo_body_adain, needle_preprocess
 from yolo3.utils import get_random_data
 
+import horovod.keras as hvd
+
+hvd.init()
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+config.gpu_options.visible_device_list = str(hvd.local_rank())
+K.set_session(tf.Session(config=config))
+
 
 def _main():
-    annotation_path = 'data/holes.csv'
-    log_dir = 'logs/holes/'
-    classes_path = 'model_data/wood_board.txt'
-    anchors_path = 'model_data/wood_anchors.txt'
-    weight_path = 'logs/holes/trained_weights_final.h5'
+    # annotation_path = 'data/holes.csv'
+    # log_dir = 'logs/holes/'
+    # classes_path = 'model_data/wood_board.txt'
+    # anchors_path = 'model_data/wood_anchors.txt'
+    # weight_path = 'logs/holes/trained_weights_final.h5'
+
+    annotation_path = 'data/stdogs/stdogs.csv'
+    log_dir = 'logs/stdogs/'
+    classes_path = 'model_data/stdogs_classes.txt'
+    anchors_path = 'model_data/yolo_anchors.txt'
+    weight_path = 'logs/stdogs/trained_weights_final.h5'
+
+
+    epoch = 200
+
+    epoch = int(epoch / hvd.size())
     val_split = 0.1
     class_names = get_classes(classes_path)
     num_classes = len(class_names)
@@ -36,7 +55,7 @@ def _main():
     checkpoint = ModelCheckpoint(log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5',
                                  monitor='val_loss', save_weights_only=True, save_best_only=True, period=3)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1)
-    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1)
+    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=1)
 
     val_split = 0.1
     with open(annotation_path) as f:
@@ -57,21 +76,32 @@ def _main():
     # Unfreeze and continue training, to fine-tune.
     # Train longer if the result is not good.
     if True:
+        optimizer = Adam(lr=1e-5 * hvd.size(), clipvalue=1e1)
+        optimizer = hvd.DistributedOptimizer(optimizer)
 
         model.compile(optimizer=Adam(lr=1e-5, clipvalue=1e1),
                       loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
         print('Unfreeze all of the layers.')
 
-        batch_size = 32  # note that more GPU memory is required after unfreezing the body
+        batch_size = 2  # note that more GPU memory is required after unfreezing the body
         print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
+        callbacks = [
+            hvd.callbacks.BroadcastGlobalVariablesCallback(0)
+            ,hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=5, verbose=1)
+            , reduce_lr
+        ]
+        if hvd.rank() == 0:
+            callbacks += [ checkpoint ,logging,  early_stopping]
+
         model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
                             steps_per_epoch=max(1, num_train // batch_size),
                             validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors,
                                                                    num_classes),
+                            verbose=1 if hvd.rank() == 0 else 0,
                             validation_steps=max(1, num_val // batch_size),
-                            epochs=200,
+                            epochs=epoch,
                             initial_epoch=0,
-                            callbacks=[logging, checkpoint, reduce_lr, early_stopping])
+                            callbacks=callbacks)
         model.save_weights(log_dir + 'trained_weights_final.h5')
 
     # Further training if needed.
