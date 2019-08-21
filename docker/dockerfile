@@ -6,7 +6,7 @@ ARG python=3.6
 # Set default shell to /bin/bash
 SHELL ["/bin/bash", "-cu"]
 
-RUN echo'''deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial main restricted universe multiverse
+RUN echo '''deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial main restricted universe multiverse
 deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial main restricted universe multiverse
 deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-updates main restricted universe multiverse
 deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-updates main restricted universe multiverse
@@ -14,7 +14,7 @@ deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-backports main restricte
 deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-backports main restricted universe multiverse
 deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-security main restricted universe multiverse
 deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-security main restricted universe multiverse
-''' >  /etc/apt/sources.list
+''' >  sources.list
 
 RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pip -U \
     && pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple

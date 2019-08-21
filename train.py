@@ -1,7 +1,7 @@
 """
 Retrain the YOLO model for your own dataset.
 """
-
+import tensorflow as tf
 import numpy as np
 import keras.backend as K
 from keras.layers import Input, Lambda
@@ -47,16 +47,19 @@ def _main():
     num_val = int(len(lines) * val_split)
     num_train = len(lines) - num_val
 
+    from tensorflow.python import debug as tf_debug
+    sess = K.get_session()
+    sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+    sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
     # Train with frozen layers first, to get a stable loss.
     # Adjust num epochs to your dataset. This step is enough to obtain a not bad model.
 
     # Unfreeze and continue training, to fine-tune.
     # Train longer if the result is not good.
     if True:
-        for i in range(len(model.layers)):
-            model.layers[i].trainable = True
-            model.compile(optimizer=Adam(lr=1e-5, clipvalue=1e1),
-                          loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
+
+        model.compile(optimizer=Adam(lr=1e-5, clipvalue=1e1),
+                      loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
         print('Unfreeze all of the layers.')
 
         batch_size = 32  # note that more GPU memory is required after unfreezing the body
@@ -97,6 +100,7 @@ def create_model_adain(input_shape, anchors, num_classes, load_pretrained=True, 
     from keras.layers import Reshape
     import tensorflow as tf
     K.clear_session()  # get a new session
+
     h, w = input_shape
     num_anchors = len(anchors)
 
@@ -105,13 +109,14 @@ def create_model_adain(input_shape, anchors, num_classes, load_pretrained=True, 
 
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
     image_input = Input(shape=(None, None, 3))
-    model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, num_anchors //3 , num_classes)
-    model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
+    class_input = Input(shape=[1], dtype=tf.int32)
+    model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input, num_anchors //3 , num_classes)
+    # model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
     print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, num_classes))
     model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
                         arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})(
         [*model_body.output, *y_true])
-    model = Model([*model_body.inputs, *y_true], model_loss)
+    model = Model([*model_body.inputs, class_input, *y_true], model_loss)
 
     return model
 
@@ -156,21 +161,24 @@ def data_generator(annotation_lines, batch_size, input_shape, anchors, num_class
         box_data = []
         box_image_data = []
         box_len_data = []
+        class_picked_data = []
         for b in range(batch_size):
             if i == 0:
                 np.random.shuffle(annotation_lines)
-            image, box, box_images, box_len = get_random_data(annotation_lines[i], input_shape, random=True)
+            image, box, box_images, box_len, class_picked = get_random_data(annotation_lines[i], input_shape, random=True)
             image_data.append(image)
             box_data.append(box)
             box_image_data.append(box_images)
             box_len_data.append(box_len)
+            class_picked_data.append(class_picked)
             i = (i + 1) % n
         image_data = np.array(image_data)
         box_data = np.array(box_data)
         box_image_data = np.stack(box_image_data, 0)
         box_len_data = np.stack(box_len_data, 0)
+        class_picked_data = np.stack(class_picked_data, 0 )
         y_true = preprocess_true_boxes(box_data, input_shape, anchors, num_classes)
-        yield [image_data, box_image_data, box_len_data, *y_true], np.zeros(batch_size)
+        yield [image_data, box_image_data, box_len_data, class_picked_data, *y_true], np.zeros(batch_size)
 
 
 def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, num_classes):

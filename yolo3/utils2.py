@@ -235,6 +235,7 @@ aug_str_crop = iaa.CropAndPad(
     pad_mode=ia.ALL,
     pad_cval=(0, 255)
 )
+import itertools
 
 aug_str_geo = iaa.SomeOf((1, 2), [
     # iaa.PerspectiveTransform(scale=(0.01, 0.1)),

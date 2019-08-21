@@ -10,7 +10,7 @@ from keras.layers.advanced_activations import LeakyReLU, ReLU
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model
 from keras.regularizers import l2
-
+from tensorflow.contrib.framework.python.ops.sort_ops import sort
 from keras.layers import Layer
 
 from yolo3.utils import compose
@@ -21,7 +21,6 @@ import tensorflow as tf
 
 
 def debug(*args):
-
     # func = inspect.currentframe().f_back.f_code
     # print(func.co_firstlineno, *args)
     pass
@@ -104,6 +103,7 @@ def yolo_body(inputs, num_anchors, num_classes):
 
     return Model(inputs, [y1, y2, y3])
 
+
 class Adain(BatchNormalization):
     def __init__(self, style_coding,
                  **kwargs):
@@ -115,7 +115,7 @@ class Adain(BatchNormalization):
         fout_dim = input_shape[-1]
         gap = self.style_coding
         for _ in range(2):
-            gap = K.expand_dims(gap,1)
+            gap = K.expand_dims(gap, 1)
 
         new_gap = compose(
             Conv2D(fout_dim * 2, (1, 1), activation='relu'),
@@ -185,20 +185,15 @@ class Adain(BatchNormalization):
 
 
 class SwitchLayer(Layer):
-    def __init__(self, momentum=0.99, **kwargs):
+    def __init__(self, needle_class, total_class=10, momentum=0.99, **kwargs):
         super(SwitchLayer, self).__init__(**kwargs)
         self.momentum = momentum
+        self.needle_class = needle_class
+        self.total_class = 10
 
     def build(self, input_shape):
         dim = input_shape[-1]
-        # if dim is None:
-        #     raise ValueError('Axis ' + str(self.axis) + ' of '
-        #                                                 'input tensor should have a defined dimension '
-        #                                                 'but the layer received an input with shape ' +
-        #                      str(input_shape) + '.')
-        # self.input_spec = InputSpec(ndim=len(input_shape),
-        #                             axes={self.axis: dim})
-        shape = (dim,)
+        shape = (self.total_class, dim)
 
         self.moving_style = self.add_weight(
             shape=shape,
@@ -209,22 +204,29 @@ class SwitchLayer(Layer):
 
     def call(self, inputs, training=None):
         train_inputs = inputs
-        test_inputs = K.expand_dims(self.moving_style,0)
-        self.add_update([K.moving_average_update(self.moving_style,
-                                                 K.mean(inputs, 0),
-                                                 self.momentum)
-                         ]
+        indices = K.squeeze(self.needle_class, axis=1)
+        test_inputs = K.gather(self.moving_style, indices)
+        class_embedding = tf.math.segment_mean(inputs,  indices)
+        def _scatter_moving_avg(ref, indice, updates, momentum=self.momentum):
+
+            class_ids = sort(tf.unique(indice)[0])
+            old_value = K.gather(ref, class_ids)
+            new_value = momentum * old_value + (1-momentum) * updates
+            return tf.scatter_update(ref, class_ids, new_value)
+
+        self.add_update([
+            _scatter_moving_avg(self.moving_style, indices, class_embedding)
+        ]
                         , inputs)
 
         return K.in_train_phase(train_inputs, test_inputs, training=training)
 
 
-
-def yolo_body_adain(inputs, needle_inputs, needle_embedding, num_anchors, num_classes):
+def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_classes):
     """Create YOLO_V3 model CNN body in Keras."""
     darknet = Model(inputs, darknet_body(inputs))
 
-    style = SwitchLayer()(needle_embedding)
+    style = SwitchLayer(needle_class=needle_class)(needle_embedding)
     x = darknet.outputs[0]
     x = Adain(style)(x)
     print('shape of k', K.get_variable_shape(x), K.get_variable_shape(darknet.output))
@@ -308,7 +310,7 @@ def needle_preprocess(max_box_length=10, image_size=64):
         debug(sys._getframe().f_lineno, x)
         # for _ in range(2):
         #     needle_input_num = tf.expand_dims(needle_input_num, -1)
-        x = K.sum(x, axis=[1,2,3], keepdims=False) / needle_input_num
+        x = K.sum(x, axis=[1, 2, 3], keepdims=False) / needle_input_num
 
         debug(sys._getframe().f_lineno, x)
         # x = Lambda(lambda a: tf.Print(a, [K.shape(a)], "\n needle_shape:"))(x)
@@ -638,7 +640,7 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
         class_loss = K.sum(class_loss) / mf
         loss += xy_loss + wh_loss + confidence_loss + class_loss
         if False:
-            loss = tf.Print(loss, [ loss, xy_loss, wh_loss,
+            loss = tf.Print(loss, [loss, xy_loss, wh_loss,
                                    confidence_loss, class_loss],
                             message='loss: ')
     return loss

@@ -40,6 +40,13 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
     iw, ih = image.size
     h, w = input_shape
     box = np.array([np.array(list(map(int,box.split(',')))) for box in line[1:]])
+    #random sample a class
+    classes_in_pic = np.unique(box[:, 4])
+    class_picked = classes_in_pic[0]
+    if box.shape[0] > 1:
+        np.random.shuffle(classes_in_pic)
+        indices = np.argwhere(box[:, 4]==class_picked).squeeze()
+        box = np.take(box, indices, axis=0)
     if not random:
         # resize image
         scale = min(w/iw, h/ih)
@@ -101,9 +108,11 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
     x[x<0] = 0
     image_data = hsv_to_rgb(x) # numpy array, 0 to 1
 
+
     # correct boxes
     box_data = np.zeros((max_boxes,5))
     if len(box)>0:
+
         np.random.shuffle(box)
         # print(box.shape)
         box[:, [0,2]] = box[:, [0,2]]*nw/iw + dx
@@ -117,8 +126,10 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
         box = box[np.logical_and(box_w>1, box_h>1)] # discard invalid box
         if len(box)>max_boxes: box = box[:max_boxes]
         box_data[:len(box)] = box
+
+
     import cv2
     img_box = np.zeros((max_boxes, img_box_num, img_box_num, 3))
     for i in range(len(box)):
         cv2.resize(image_data, (img_box_num,img_box_num), img_box[i,...])
-    return image_data, box_data, img_box, len(box)
+    return image_data, box_data, img_box, len(box), class_picked
