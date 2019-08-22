@@ -38,12 +38,12 @@ def _main():
     anchors_path = 'model_data/yolo_anchors.txt'
     weight_path = 'logs/stdogs/trained_weights_final.h5'
 
-
     epoch = 200
 
     epoch = int(epoch / hvd.size())
     val_split = 0.1
-    class_names = get_classes(classes_path)
+    # class_names = get_classes(classes_path)
+    from sdog_annotation import train_classes as class_names
     num_classes = len(class_names)
     anchors = get_anchors(anchors_path)
 
@@ -72,8 +72,6 @@ def _main():
     sess = K.get_session()
     sess = tf_debug.LocalCLIDebugWrapperSession(sess)
     sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
-    # Train with frozen layers first, to get a stable loss.
-    # Adjust num epochs to your dataset. This step is enough to obtain a not bad model.
 
     # Unfreeze and continue training, to fine-tune.
     # Train longer if the result is not good.
