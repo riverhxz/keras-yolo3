@@ -467,7 +467,7 @@ def preprocess_true_boxes(true_boxes, input_shape, anchors, num_classes):
         Absolute x_min, y_min, x_max, y_max, class_id relative to input_shape.
     input_shape: array-like, hw, multiples of 32
     anchors: array, shape=(N, 2), wh
-    num_classes: integer
+    _num_classes: integer
 
     Returns
     -------
@@ -475,6 +475,7 @@ def preprocess_true_boxes(true_boxes, input_shape, anchors, num_classes):
 
     '''
     assert (true_boxes[..., 4] < num_classes).all(), 'class id must be less than num_classes'
+    _num_classes = 1
     num_layers = len(anchors) // 3  # default setting
     anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]] if num_layers == 3 else [[3, 4, 5], [1, 2, 3]]
 
@@ -487,7 +488,7 @@ def preprocess_true_boxes(true_boxes, input_shape, anchors, num_classes):
 
     m = true_boxes.shape[0]
     grid_shapes = [input_shape // {0: 32, 1: 16, 2: 8}[l] for l in range(num_layers)]
-    y_true = [np.zeros((m, grid_shapes[l][0], grid_shapes[l][1], len(anchor_mask[l]), 5 + num_classes),
+    y_true = [np.zeros((m, grid_shapes[l][0], grid_shapes[l][1], len(anchor_mask[l]), 5 + _num_classes),
                        dtype='float32') for l in range(num_layers)]
 
     # Expand dim to apply broadcasting.
@@ -522,8 +523,9 @@ def preprocess_true_boxes(true_boxes, input_shape, anchors, num_classes):
                     i = np.floor(true_boxes[b, t, 0] * grid_shapes[l][1]).astype('int32')
                     j = np.floor(true_boxes[b, t, 1] * grid_shapes[l][0]).astype('int32')
                     k = anchor_mask[l].index(n)
-                    c = true_boxes[b, t, 4].astype('int32')
-
+                    # only 1 class
+                    # c = true_boxes[b, t, 4].astype('int32')
+                    c = 0
                     y_true[l][b, j, i, k, 0:4] = true_boxes[b, t, 0:4]
                     y_true[l][b, j, i, k, 4] = 1
                     y_true[l][b, j, i, k, 5 + c] = 1

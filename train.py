@@ -32,7 +32,7 @@ def _main():
     # classes_path = 'model_data/wood_board.txt'
     # anchors_path = 'model_data/wood_anchors.txt'
     # weight_path = 'logs/holes/trained_weights_final.h5'
-    annotation_path = 'data/stdogs/stdogs.csv'
+    annotation_path = 'data/stdogs/stdogs_100.csv'
     log_dir = 'logs/stdogs/'
     classes_path = 'model_data/stdogs_classes.txt'
     anchors_path = 'model_data/yolo_anchors.txt'
