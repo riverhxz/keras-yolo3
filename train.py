@@ -50,7 +50,8 @@ def _main():
     input_shape = (416, 416)  # multiple of 32, hw
 
     is_tiny_version = len(anchors) == 6  # default setting
-    model = create_model_adain(input_shape, anchors, num_classes,
+
+    model = create_model_adain(input_shape, anchors, 1,
                                freeze_body=2, weights_path=weight_path)  # make sure you know what you freeze
 
     logging = TensorBoard(log_dir=log_dir)
