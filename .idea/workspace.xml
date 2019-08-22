@@ -83,8 +83,8 @@
       <method v="2" />
     </configuration>
     <list>
-      <item itemvalue="Python.train" />
       <item itemvalue="Python.model" />
+      <item itemvalue="Python.train" />
     </list>
     <recent_temporary>
       <list>
