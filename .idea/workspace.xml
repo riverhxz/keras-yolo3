@@ -1,12 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="68ebd662-f6ae-467a-90cd-7497c94b61ef" name="Default" comment="add data split for multi-gpu train">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/train.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/yolo3/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/model.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/yolo3/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/utils.py" afterDir="false" />
-    </list>
+    <list default="true" id="68ebd662-f6ae-467a-90cd-7497c94b61ef" name="Default" comment="add data split for multi-gpu train" />
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
