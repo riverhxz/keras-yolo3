@@ -185,11 +185,11 @@ class Adain(BatchNormalization):
 
 
 class SwitchLayer(Layer):
-    def __init__(self, needle_class, total_class=10, momentum=0.99, **kwargs):
+    def __init__(self, needle_class, training_classes, momentum=0.99, **kwargs):
         super(SwitchLayer, self).__init__(**kwargs)
         self.momentum = momentum
         self.needle_class = needle_class
-        self.total_class = 10
+        self.total_class = training_classes
 
     def build(self, input_shape):
         dim = input_shape[-1]
@@ -222,15 +222,15 @@ class SwitchLayer(Layer):
         return K.in_train_phase(train_inputs, test_inputs, training=training)
 
 
-def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_classes):
+def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_class, deprecated_num_classes=1):
     """Create YOLO_V3 model CNN body in Keras."""
     darknet = Model(inputs, darknet_body(inputs))
 
-    style = SwitchLayer(needle_class=needle_class)(needle_embedding)
+    style = SwitchLayer(needle_class=needle_class, training_classes=num_class)(needle_embedding)
     x = darknet.outputs[0]
     x = Adain(style)(x)
     print('shape of k', K.get_variable_shape(x), K.get_variable_shape(darknet.output))
-    x, y1 = make_last_layers(x, 512, num_anchors * (num_classes + 5))
+    x, y1 = make_last_layers(x, 512, num_anchors * (deprecated_num_classes + 5))
     x = compose(
         DarknetConv2D_BN_Leaky(256, (1, 1)),
         UpSampling2D(2))(x)
@@ -240,7 +240,7 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_a
     x = Adain(style)(x)
 
     # x = Lambda(lambda a: tf.Print(a, [a], "\nconcate:"))(x)
-    x, y2 = make_last_layers(x, 256, num_anchors * (num_classes + 5))
+    x, y2 = make_last_layers(x, 256, num_anchors * (deprecated_num_classes + 5))
 
     x = compose(
         DarknetConv2D_BN_Leaky(128, (1, 1)),
@@ -248,7 +248,7 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_a
     x = Concatenate()([x, darknet.layers[92].output])
     x = Adain(style)(x)
 
-    x, y3 = make_last_layers(x, 128, num_anchors * (num_classes + 5))
+    x, y3 = make_last_layers(x, 128, num_anchors * (deprecated_num_classes + 5))
 
     # y3 = Lambda(lambda a: tf.Print(a, [ tf.shape(a)], "\ntt:", summarize=10))(y3)
 

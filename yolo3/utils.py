@@ -1,5 +1,6 @@
 """Miscellaneous utility functions."""
 
+import cv2
 from functools import reduce
 
 from PIL import Image
@@ -128,7 +129,6 @@ def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jit
         box_data[:len(box)] = box
 
 
-    import cv2
     img_box = np.zeros((max_boxes, img_box_num, img_box_num, 3))
     for i in range(len(box)):
         cv2.resize(image_data, (img_box_num,img_box_num), img_box[i,...])

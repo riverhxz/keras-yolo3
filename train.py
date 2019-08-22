@@ -40,7 +40,7 @@ def _main():
 
     epoch = 200
 
-    epoch = int(epoch / hvd.size())
+    epoch = epoch
     val_split = 0.1
     # class_names = get_classes(classes_path)
     from sdog_annotation import train_classes as class_names
@@ -51,7 +51,7 @@ def _main():
 
     is_tiny_version = len(anchors) == 6  # default setting
 
-    model = create_model_adain(input_shape, anchors, 1,
+    model = create_model_adain(input_shape, anchors, num_classes,
                                freeze_body=2, weights_path=weight_path)  # make sure you know what you freeze
 
     logging = TensorBoard(log_dir=log_dir)
@@ -100,9 +100,10 @@ def _main():
                                                                    num_classes),
                             verbose=1 if hvd.rank() == 0 else 0,
                             validation_steps=max(1, num_val // batch_size),
+
                             epochs=epoch,
                             initial_epoch=0,
-                            
+
                             callbacks=callbacks)
         model.save_weights(log_dir + 'trained_weights_final.h5')
 
@@ -125,9 +126,9 @@ def get_anchors(anchors_path):
     return np.array(anchors).reshape(-1, 2)
 
 
-def create_model_adain(input_shape, anchors, num_classes, load_pretrained=True, freeze_body=2,
+def create_model_adain(input_shape, anchors, num_classes,  load_pretrained=True, freeze_body=2,
                        weights_path='logs/holes/ep132-loss114.564-val_loss122.172.h5', max_box_length=20,
-                       needle_size=64):
+                       needle_size=64,deprected_num_classes=1):
     '''create the training model'''
     from keras.layers import Reshape
     import tensorflow as tf
@@ -137,16 +138,16 @@ def create_model_adain(input_shape, anchors, num_classes, load_pretrained=True, 
     num_anchors = len(anchors)
 
     y_true = [Input(shape=(h // {0: 32, 1: 16, 2: 8}[l], w // {0: 32, 1: 16, 2: 8}[l], \
-                           num_anchors // 3, num_classes + 5)) for l in range(3)]
+                           num_anchors // 3, deprected_num_classes + 5)) for l in range(3)]
 
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
     image_input = Input(shape=(None, None, 3))
     class_input = Input(shape=[1], dtype=tf.int32)
-    model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input, num_anchors //3 , num_classes)
+    model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input, num_anchors // 3, num_classes)
     # model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
-    print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, num_classes))
+    print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, deprected_num_classes))
     model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
-                        arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})(
+        arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})(
         [*model_body.output, *y_true])
     model = Model([*model_body.inputs, class_input, *y_true], model_loss)
 
@@ -184,7 +185,7 @@ def create_model(input_shape, anchors, num_classes, load_pretrained=True, freeze
     return model
 
 
-def data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes):
+def data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes, size , rank):
     '''data generator for fit_generator'''
     n = len(annotation_lines)
     i = 0
@@ -194,9 +195,11 @@ def data_generator(annotation_lines, batch_size, input_shape, anchors, num_class
         box_image_data = []
         box_len_data = []
         class_picked_data = []
-        for b in range(batch_size):
+        for b in range(batch_size * size):
             if i == 0:
                 np.random.shuffle(annotation_lines)
+            if b % size != rank:
+                continue
             image, box, box_images, box_len, class_picked = get_random_data(annotation_lines[i], input_shape, random=True)
             image_data.append(image)
             box_data.append(box)
@@ -210,13 +213,14 @@ def data_generator(annotation_lines, batch_size, input_shape, anchors, num_class
         box_len_data = np.stack(box_len_data, 0)
         class_picked_data = np.stack(class_picked_data, 0 )
         y_true = preprocess_true_boxes(box_data, input_shape, anchors, num_classes)
+        print(class_picked_data)
         yield [image_data, box_image_data, box_len_data, class_picked_data, *y_true], np.zeros(batch_size)
 
 
 def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, num_classes):
     n = len(annotation_lines)
     if n == 0 or batch_size <= 0: return None
-    return data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes)
+    return data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes, hvd.size(), hvd.rank())
 
 
 if __name__ == '__main__':

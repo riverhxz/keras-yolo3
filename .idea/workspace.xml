@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="68ebd662-f6ae-467a-90cd-7497c94b61ef" name="Default" comment="">
+    <list default="true" id="68ebd662-f6ae-467a-90cd-7497c94b61ef" name="Default" comment="add data split for multi-gpu train">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/train.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolo3/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/model.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/yolo3/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/utils.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -110,7 +111,14 @@
       <option name="project" value="LOCAL" />
       <updated>1566443232791</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="add data split for multi-gpu train">
+      <created>1566455706893</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1566455706893</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -150,7 +158,8 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="add 100 train classes" />
-    <option name="LAST_COMMIT_MESSAGE" value="add 100 train classes" />
+    <MESSAGE value="add data split for multi-gpu train" />
+    <option name="LAST_COMMIT_MESSAGE" value="add data split for multi-gpu train" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
