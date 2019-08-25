@@ -18,7 +18,7 @@ from yolo3.utils import compose
 import sys
 import inspect
 import tensorflow as tf
-
+import horovod.tensorflow as hvd
 
 def debug(*args):
     # func = inspect.currentframe().f_back.f_code
@@ -179,6 +179,8 @@ class Adain(BatchNormalization):
                         inputs)
 
         # Pick the normalized form corresponding to the training phase.
+
+        # normed_training = tf.Print(normed_training, [K.sum(self.moving_mean), "Adain moving mean"])
         return K.in_train_phase(normed_training,
                                 normalize_inference,
                                 training=training)
@@ -205,22 +207,40 @@ class SwitchLayer(Layer):
     def call(self, inputs, training=None):
 
         indices = K.squeeze(self.needle_class, axis=1)
-        test_inputs = K.gather(self.moving_style, indices)
-        train_inputs = inputs
-        class_embedding = tf.math.segment_mean(inputs,  indices)
-        def _scatter_moving_avg(ref, indice, updates, momentum=self.momentum):
 
-            class_ids = sort(tf.unique(indice)[0])
-            old_value = K.gather(ref, class_ids)
-            new_value = momentum * old_value + (1-momentum) * updates
-            return tf.scatter_update(ref, class_ids, new_value)
+        if hvd.size() > 1:
+            gathered_inputs = hvd.allgather(inputs)
+            gathered_indice = hvd.allgather(indices)
+        else:
+            gathered_inputs = inputs
+            gathered_indice = indices
 
-        self.add_update([
-            _scatter_moving_avg(self.moving_style, indices, class_embedding)
-        ], inputs)
+        class_embedding = tf.math.unsorted_segment_mean(gathered_inputs, gathered_indice, self.total_class)
 
-        return K.in_train_phase(train_inputs, test_inputs, training=training)
 
+        def in_inferance():
+            test_inputs = K.gather(self.moving_style, indices)
+            return test_inputs
+
+        update_op = K.moving_average_update(self.moving_style, class_embedding, self.momentum)
+        with tf.control_dependencies([update_op]):
+            train_inputs = inputs * 1
+
+        # train_inputs = tf.Print(train_inputs, [K.shape(train_inputs)], "embeding shape")
+        if training in (0, False):
+            return in_inferance()
+
+        return K.in_train_phase(train_inputs, in_inferance, training=training)
+
+
+def _scatter_moving_avg(ref, index, updates, momentum):
+
+    class_ids = sort(tf.unique(index)[0])
+    old_value = K.gather(ref, class_ids)
+    new_value = momentum * old_value + (1-momentum) * updates
+    # new_value = tf.Print(new_value, [new_value], " new_value updated")
+    op = tf.scatter_update(ref, class_ids, new_value)
+    return op
 
 def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_class, deprecated_num_classes=1):
     """Create YOLO_V3 model CNN body in Keras."""
@@ -229,6 +249,7 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_a
     style = SwitchLayer(needle_class=needle_class, training_classes=num_class)(needle_embedding)
     x = darknet.outputs[0]
     x = Adain(style)(x)
+
     print('shape of k', K.get_variable_shape(x), K.get_variable_shape(darknet.output))
     x, y1 = make_last_layers(x, 512, num_anchors * (deprecated_num_classes + 5))
     x = compose(
@@ -308,12 +329,9 @@ def needle_preprocess(max_box_length=10, image_size=64):
         x = mask * x
 
         debug(sys._getframe().f_lineno, x)
-        # for _ in range(2):
-        #     needle_input_num = tf.expand_dims(needle_input_num, -1)
         x = K.sum(x, axis=[1, 2, 3], keepdims=False) / needle_input_num
 
         debug(sys._getframe().f_lineno, x)
-        # x = Lambda(lambda a: tf.Print(a, [K.shape(a)], "\n needle_shape:"))(x)
         return x
 
     embedding_out = needle_embeding.output

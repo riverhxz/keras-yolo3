@@ -36,7 +36,7 @@ def _main():
     log_dir = 'logs/stdogs/'
     classes_path = 'model_data/stdogs_classes.txt'
     anchors_path = 'model_data/yolo_anchors.txt'
-    weight_path = 'logs/stdogs/trained_weights_final.h5'
+    weight_path = 'logs/stdogs/ep036-loss17.406-val_loss22.548.h5'
 
     epoch = 200
 
@@ -54,9 +54,11 @@ def _main():
     model = create_model_adain(input_shape, anchors, num_classes,
                                freeze_body=2, weights_path=weight_path)  # make sure you know what you freeze
 
+    verbose = 1 if hvd.rank() == 0 else 0
+    print("verbose:",verbose)
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5',
-                                 monitor='val_loss', save_weights_only=True, save_best_only=True, period=3)
+                                 monitor='val_loss', save_weights_only=True, save_best_only=True, period=5)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1)
     early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=1)
 
@@ -68,11 +70,6 @@ def _main():
     np.random.seed(None)
     num_val = int(len(lines) * val_split)
     num_train = len(lines) - num_val
-
-    from tensorflow.python import debug as tf_debug
-    sess = K.get_session()
-    sess = tf_debug.LocalCLIDebugWrapperSession(sess)
-    sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
     # Unfreeze and continue training, to fine-tune.
     # Train longer if the result is not good.
@@ -88,18 +85,18 @@ def _main():
         print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
         callbacks = [
             hvd.callbacks.BroadcastGlobalVariablesCallback(0)
-            ,hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=5, verbose=1)
+            ,hvd.callbacks.LearningRateWarmupCallback(warmup_epochs=5, verbose=verbose)
             , reduce_lr
         ]
         if hvd.rank() == 0:
             callbacks += [ checkpoint ,logging,  early_stopping]
 
         model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
-                            steps_per_epoch=max(1, num_train // batch_size),
+                            steps_per_epoch=max(1, num_train // batch_size // hvd.size()),
                             validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors,
                                                                    num_classes),
-                            verbose=1 if hvd.rank() == 0 else 0,
-                            validation_steps=max(1, num_val // batch_size),
+                            verbose=verbose,
+                            validation_steps=max(1, num_val // batch_size // hvd.size()),
 
                             epochs=epoch,
                             initial_epoch=0,
@@ -147,43 +144,11 @@ def create_model_adain(input_shape, anchors, num_classes,  load_pretrained=True,
     # model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
     print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, deprected_num_classes))
     model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
-        arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})(
+        arguments={'anchors': anchors, 'num_classes': deprected_num_classes, 'ignore_thresh': 0.5})(
         [*model_body.output, *y_true])
     model = Model([*model_body.inputs, class_input, *y_true], model_loss)
 
     return model
-
-
-def create_model(input_shape, anchors, num_classes, load_pretrained=True, freeze_body=2,
-                 weights_path='model_data/yolo_weights.h5'):
-    '''create the training model'''
-    K.clear_session()  # get a new session
-    image_input = Input(shape=(None, None, 3))
-    h, w = input_shape
-    num_anchors = len(anchors)
-
-    y_true = [Input(shape=(h // {0: 32, 1: 16, 2: 8}[l], w // {0: 32, 1: 16, 2: 8}[l], \
-                           num_anchors // 3, num_classes + 5)) for l in range(3)]
-
-    model_body = yolo_body(image_input, num_anchors // 3, num_classes)
-    print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, num_classes))
-
-    if load_pretrained:
-        model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
-        print('Load weights {}.'.format(weights_path))
-        if freeze_body in [1, 2]:
-            # Freeze darknet53 body or freeze all but 3 output layers.
-            num = (185, len(model_body.layers) - 3)[freeze_body - 1]
-            for i in range(num): model_body.layers[i].trainable = False
-            print('Freeze the first {} layers of total {} layers.'.format(num, len(model_body.layers)))
-
-    model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
-                        arguments={'anchors': anchors, 'num_classes': num_classes, 'ignore_thresh': 0.5})(
-        [*model_body.output, *y_true])
-    model = Model([model_body.input, *y_true], model_loss)
-
-    return model
-
 
 def data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes, size , rank):
     '''data generator for fit_generator'''
@@ -213,7 +178,6 @@ def data_generator(annotation_lines, batch_size, input_shape, anchors, num_class
         box_len_data = np.stack(box_len_data, 0)
         class_picked_data = np.stack(class_picked_data, 0 )
         y_true = preprocess_true_boxes(box_data, input_shape, anchors, num_classes)
-        print(class_picked_data)
         yield [image_data, box_image_data, box_len_data, class_picked_data, *y_true], np.zeros(batch_size)
 
 

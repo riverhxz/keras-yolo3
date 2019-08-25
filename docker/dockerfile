@@ -5,16 +5,7 @@ ARG python=3.6
 
 # Set default shell to /bin/bash
 SHELL ["/bin/bash", "-cu"]
-
-RUN echo '''deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial main restricted universe multiverse
-deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial main restricted universe multiverse
-deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-updates main restricted universe multiverse
-deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-updates main restricted universe multiverse
-deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-backports main restricted universe multiverse
-deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-backports main restricted universe multiverse
-deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-security main restricted universe multiverse
-deb-src https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ xenial-security main restricted universe multiverse
-''' >  sources.list
+ADD sources.list /etc/apt/sources.list
 
 RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pip -U \
     && pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -69,12 +60,12 @@ RUN apt-get install -y --no-install-recommends subversion && \
     rm -rf /examples/.svn
 
 # Add rsa key
-ADD --chown=root:root id_rsa /root/.ssh/id_rsa
-
-ADD --chown=root:root authorized_keys /root/.ssh/authorized_keys
-
-RUN chmod 700 /root/.ssh && \
-    chmod 600 /root/.ssh/authorized_keys
+# ADD --chown=root:root ~/id_rsa /root/.ssh/id_rsa
+#
+# ADD --chown=root:root authorized_keys /root/.ssh/authorized_keys
+#
+# RUN chmod 700 /root/.ssh && \
+#     chmod 600 /root/.ssh/authorized_keys
 
 
 WORKDIR "/examples"
