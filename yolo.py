@@ -13,6 +13,7 @@ from keras.models import load_model
 from keras.layers import Input
 from PIL import Image, ImageFont, ImageDraw
 
+from train import create_model_eval
 from yolo3.model import yolo_eval, yolo_body, tiny_yolo_body
 from yolo3.utils import letterbox_image
 import os
@@ -66,16 +67,18 @@ class YOLO(object):
         num_anchors = len(self.anchors)
         num_classes = len(self.class_names)
         is_tiny_version = num_anchors==6 # default setting
-        try:
-            self.yolo_model = load_model(model_path, compile=False)
-        except:
-            self.yolo_model = tiny_yolo_body(Input(shape=(None,None,3)), num_anchors//2, num_classes) \
-                if is_tiny_version else yolo_body(Input(shape=(None,None,3)), num_anchors//3, num_classes)
-            self.yolo_model.load_weights(self.model_path) # make sure model, anchors and classes match
-        else:
-            assert self.yolo_model.layers[-1].output_shape[-1] == \
-                num_anchors/len(self.yolo_model.output) * (num_classes + 5), \
-                'Mismatch between model and given anchor and class sizes'
+        self.yolo_model = create_model_eval(num_anchors, num_classes
+                                  , weights_path=self.model_path)
+        # try:
+        #     self.yolo_model = load_model(model_path, compile=False)
+        # except:
+        #     self.yolo_model = tiny_yolo_body(Input(shape=(None,None,3)), num_anchors//2, num_classes) \
+        #         if is_tiny_version else yolo_body(Input(shape=(None,None,3)), num_anchors//3, num_classes)
+        #     self.yolo_model.load_weights(self.model_path) # make sure model, anchors and classes match
+        # else:
+        #     assert self.yolo_model.layers[-1].output_shape[-1] == \
+        #         num_anchors/len(self.yolo_model.output) * (num_classes + 5), \
+        #         'Mismatch between model and given anchor and class sizes'
 
         print('{} model, anchors, and classes loaded.'.format(model_path))
 
@@ -99,7 +102,7 @@ class YOLO(object):
                 score_threshold=self.score, iou_threshold=self.iou)
         return boxes, scores, classes
 
-    def detect_image(self, image):
+    def detect_image(self, image, clz):
         start = timer()
 
         if self.model_image_size != (None, None):
@@ -116,10 +119,11 @@ class YOLO(object):
         image_data /= 255.
         image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
 
+        data = dict(zip(self.yolo_model.input,[image_data, np.zeros(1, 20, 64, 64, 3), np.ones(1), clz]))
         out_boxes, out_scores, out_classes = self.sess.run(
             [self.boxes, self.scores, self.classes],
             feed_dict={
-                self.yolo_model.input: image_data,
+                **data,
                 self.input_image_shape: [image.size[1], image.size[0]],
                 K.learning_phase(): 0
             })

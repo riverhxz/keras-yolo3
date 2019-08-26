@@ -82,7 +82,6 @@ def make_last_layers(x, num_filters, out_filters):
         DarknetConv2D(out_filters, (1, 1)))(x)
     return x, y
 
-
 def yolo_body(inputs, num_anchors, num_classes):
     """Create YOLO_V3 model CNN body in Keras."""
     darknet = Model(inputs, darknet_body(inputs))
@@ -242,11 +241,13 @@ def _scatter_moving_avg(ref, index, updates, momentum):
     op = tf.scatter_update(ref, class_ids, new_value)
     return op
 
-def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_class, deprecated_num_classes=1):
+def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_class, deprecated_num_classes=1, inference=False):
     """Create YOLO_V3 model CNN body in Keras."""
     darknet = Model(inputs, darknet_body(inputs))
 
-    style = SwitchLayer(needle_class=needle_class, training_classes=num_class)(needle_embedding)
+    if inference:
+        style = SwitchLayer(needle_class=needle_class, training_classes=num_class)(needle_embedding)
+
     x = darknet.outputs[0]
     x = Adain(style)(x)
 
