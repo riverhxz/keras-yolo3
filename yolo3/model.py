@@ -20,6 +20,7 @@ import inspect
 import tensorflow as tf
 import horovod.tensorflow as hvd
 
+
 def debug(*args):
     # func = inspect.currentframe().f_back.f_code
     # print(func.co_firstlineno, *args)
@@ -81,6 +82,7 @@ def make_last_layers(x, num_filters, out_filters):
         DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
         DarknetConv2D(out_filters, (1, 1)))(x)
     return x, y
+
 
 def yolo_body(inputs, num_anchors, num_classes):
     """Create YOLO_V3 model CNN body in Keras."""
@@ -216,7 +218,6 @@ class SwitchLayer(Layer):
 
         class_embedding = tf.math.unsorted_segment_mean(gathered_inputs, gathered_indice, self.total_class)
 
-
         def in_inferance():
             test_inputs = K.gather(self.moving_style, indices)
             return test_inputs
@@ -233,20 +234,20 @@ class SwitchLayer(Layer):
 
 
 def _scatter_moving_avg(ref, index, updates, momentum):
-
     class_ids = sort(tf.unique(index)[0])
     old_value = K.gather(ref, class_ids)
-    new_value = momentum * old_value + (1-momentum) * updates
+    new_value = momentum * old_value + (1 - momentum) * updates
     # new_value = tf.Print(new_value, [new_value], " new_value updated")
     op = tf.scatter_update(ref, class_ids, new_value)
     return op
 
-def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_class, deprecated_num_classes=1, inference=False):
+
+def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_class,
+                    deprecated_num_classes=1):
     """Create YOLO_V3 model CNN body in Keras."""
     darknet = Model(inputs, darknet_body(inputs))
 
-    if inference:
-        style = SwitchLayer(needle_class=needle_class, training_classes=num_class)(needle_embedding)
+    style = SwitchLayer(needle_class=needle_class, training_classes=num_class)(needle_embedding)
 
     x = darknet.outputs[0]
     x = Adain(style)(x)
@@ -427,7 +428,7 @@ def yolo_boxes_and_scores(feats, anchors, num_classes, input_shape, image_shape)
                                                                 anchors, num_classes, input_shape)
     boxes = yolo_correct_boxes(box_xy, box_wh, input_shape, image_shape)
     boxes = K.reshape(boxes, [-1, 4])
-    box_scores = box_confidence * box_class_probs
+    box_scores = box_confidence  # thereis no class_prob
     box_scores = K.reshape(box_scores, [-1, num_classes])
     return boxes, box_scores
 
@@ -651,23 +652,28 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
         xy_loss = object_mask * box_loss_scale * K.binary_crossentropy(raw_true_xy, raw_pred[..., 0:2],
                                                                        from_logits=True)
         wh_loss = object_mask * box_loss_scale * 0.5 * K.square(raw_true_wh - raw_pred[..., 2:4])
-        confidence_loss = object_mask * K.binary_crossentropy(object_mask, raw_pred[..., 4:5], from_logits=True) + \
+        _confidence_loss = object_mask * K.binary_crossentropy(object_mask, raw_pred[..., 4:5], from_logits=True) + \
                           (1 - object_mask) * K.binary_crossentropy(object_mask, raw_pred[..., 4:5],
                                                                     from_logits=True) * ignore_mask
         # class_loss = object_mask * K.binary_crossentropy(true_class_probs, raw_pred[..., 5:], from_logits=True)
 
         xy_loss = K.sum(xy_loss) / mf
         wh_loss = K.sum(wh_loss) / mf
-        confidence_loss = K.sum(confidence_loss) / mf
+        confidence_loss = K.sum(_confidence_loss) / mf
         # class_loss = K.sum(class_loss) / mf
         loss += (
                 xy_loss + wh_loss + confidence_loss
-                #+ class_loss
+            # + class_loss
         )
-        if False:
-            loss = tf.Print(loss, [loss, xy_loss, wh_loss,
-                                   confidence_loss
-                                    #,class_loss
-                                   ],
-                            message='loss: ')
+        indice = tf.reshape(object_mask, [-1])
+        one = tf.argmax(indice, axis=1)
+        if True:
+            loss = tf.Print(loss, [loss
+                , xy_loss
+                , wh_loss
+                , confidence_loss, one, tf.reshape(_confidence_loss, [-1])[one], tf.reshape(raw_pred[..., 4:5], [-1])[one]
+                                   ,mf
+                                   ]
+                            , summarize=1000
+                            , message='loss: ')
     return loss

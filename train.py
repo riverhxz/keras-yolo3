@@ -27,13 +27,65 @@ config.gpu_options.allow_growth = True
 config.gpu_options.visible_device_list = '0'
 K.set_session(tf.Session(config=config))
 
+def eval():
+    # annotation_path = 'data/holes.csv'
+    # log_dir = 'logs/holes/'
+    # classes_path = 'model_data/wood_board.txt'
+    # anchors_path = 'model_data/wood_anchors.txt'
+    # weight_path = 'logs/holes/trained_weights_final.h5'
+    annotation_path = 'data/stdogs/stdogs_debug.csv'
+    log_dir = 'logs/stdogs/'
+    classes_path = 'model_data/stdogs_classes.txt'
+    anchors_path = 'model_data/yolo_anchors.txt'
+    weight_path = 'logs/stdogs/ep030-loss12.408-val_loss17.981.h5'
+
+    epoch = 200
+
+    epoch = epoch
+    val_split = 0.1
+    # class_names = get_classes(classes_path)
+    from sdog_annotation import train_classes as class_names
+    num_classes = len(class_names)
+    anchors = get_anchors(anchors_path)
+
+    input_shape = (416, 416)  # multiple of 32, hw
+
+    is_tiny_version = len(anchors) == 6  # default setting
+
+    model = create_model_adain(input_shape, anchors, num_classes, weights_path=weight_path)  # make sure you know what you freeze
+    verbose = 1 if hvd.rank() == 0 else 0
+    print("verbose:",verbose)
+    logging = TensorBoard(log_dir=log_dir)
+
+    val_split = 0.1
+    with open(annotation_path) as f:
+        lines = f.readlines()
+    np.random.seed(10101)
+
+
+    # Unfreeze and continue training, to fine-tune.
+    # Train longer if the result is not good.
+    if True:
+        optimizer = Adam(lr=1e-5 * hvd.size(), clipvalue=1e1)
+        optimizer = hvd.DistributedOptimizer(optimizer)
+
+        model.compile(optimizer=optimizer,
+                      loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
+        print('Unfreeze all of the layers.')
+
+        batch_size = 1  # note that more GPU memory is required after unfreezing the body
+
+        model.evaluate_generator(data_generator_wrapper(lines, batch_size, input_shape, anchors,
+                                                                   num_classes,random=True),steps=1)
+
+
 def test():
     # annotation_path = 'data/holes.csv'
     # log_dir = 'logs/holes/'
     # classes_path = 'model_data/wood_board.txt'
     # anchors_path = 'model_data/wood_anchors.txt'
     # weight_path = 'logs/holes/trained_weights_final.h5'
-    annotation_path = 'data/stdogs/stdogs_100.csv'
+    annotation_path = 'data/stdogs/stdogs_debug.csv'
     log_dir = 'logs/stdogs/'
     classes_path = 'model_data/stdogs_classes.txt'
     anchors_path = 'model_data/yolo_anchors.txt'
@@ -101,8 +153,7 @@ def _main():
 
     is_tiny_version = len(anchors) == 6  # default setting
 
-    model = create_model_adain(input_shape, anchors, num_classes,
-                               freeze_body=2, weights_path=weight_path)  # make sure you know what you freeze
+    model = create_model_adain(input_shape, anchors, num_classes, weights_path=weight_path)  # make sure you know what you freeze
     verbose = 1 if hvd.rank() == 0 else 0
     print("verbose:",verbose)
     logging = TensorBoard(log_dir=log_dir)
@@ -140,7 +191,6 @@ def _main():
         if hvd.rank() == 0:
             callbacks += [ checkpoint ,logging,  early_stopping]
 
-        model.predict_generator()
         model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
                             steps_per_epoch=max(1, num_train // batch_size // hvd.size()),
                             validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors,
@@ -177,7 +227,7 @@ def create_model_eval(num_anchors, num_classes,
                        needle_size=64):
     '''create the training model'''
     import tensorflow as tf
-    K.clear_session()  # get a new session
+    # K.clear_session()  # get a new session
     image_input = Input(shape=(None, None, 3))
     class_input = Input(shape=[1], dtype=tf.int32)
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
@@ -188,8 +238,8 @@ def create_model_eval(num_anchors, num_classes,
 
 
 
-def create_model_adain(input_shape, anchors, num_classes,  load_pretrained=True, freeze_body=2,
-                       weights_path='logs/holes/ep132-loss114.564-val_loss122.172.h5', max_box_length=20,
+def create_model_adain(input_shape, anchors, num_classes,
+                       weights_path=None, max_box_length=20,
                        needle_size=64, deprected_num_classes=1):
     '''create the training model'''
     from keras.layers import Reshape
@@ -206,7 +256,8 @@ def create_model_adain(input_shape, anchors, num_classes,  load_pretrained=True,
 
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
     model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input, num_anchors // 3, num_classes)
-    # model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
+    if weights_path is not None:
+        model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
     print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, deprected_num_classes))
     model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
         arguments={'anchors': anchors, 'num_classes': deprected_num_classes, 'ignore_thresh': 0.5})(
@@ -249,8 +300,10 @@ def data_generator(annotation_lines, batch_size, input_shape, anchors, num_class
 def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, num_classes, random=True):
     n = len(annotation_lines)
     if n == 0 or batch_size <= 0: return None
-    return data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes, hvd.size(), hvd.rank(),random)
+    return data_generator(annotation_lines, batch_size, input_shape, anchors, num_classes, hvd.size(), hvd.rank()
+                          , random=random)
 
 
 if __name__ == '__main__':
-    _main()
+    # _main()
+    eval()

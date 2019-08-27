@@ -19,15 +19,17 @@ from yolo3.utils import letterbox_image
 import os
 from keras.utils import multi_gpu_model
 
+
+
 class YOLO(object):
     _defaults = {
-        "model_path": 'model_data/ep190-loss14.823-val_loss16.483.h5',
-        "anchors_path": 'model_data/wood_anchors.txt',
-        "classes_path": 'model_data/wood_board.txt',
-        "score" : 0.5,
+        "model_path": 'logs/stdogs/ep030-loss12.408-val_loss17.981.h5',
+        "anchors_path": 'model_data/yolo_anchors.txt',
+        "classes_path": 'model_data/stdogs_classes.txt',
+        "score" : 0.01,
         "iou" : 0.5,
         "model_image_size" : (416, 416),
-        "gpu_num" : 0,
+        "gpu_num" : 1,
     }
 
     @classmethod
@@ -66,7 +68,9 @@ class YOLO(object):
         # Load model, or construct model and load weights.
         num_anchors = len(self.anchors)
         num_classes = len(self.class_names)
+        final_classes= 1
         is_tiny_version = num_anchors==6 # default setting
+
         self.yolo_model = create_model_eval(num_anchors, num_classes
                                   , weights_path=self.model_path)
         # try:
@@ -98,7 +102,7 @@ class YOLO(object):
         if self.gpu_num>=2:
             self.yolo_model = multi_gpu_model(self.yolo_model, gpus=self.gpu_num)
         boxes, scores, classes = yolo_eval(self.yolo_model.output, self.anchors,
-                len(self.class_names), self.input_image_shape,
+                final_classes, self.input_image_shape,
                 score_threshold=self.score, iou_threshold=self.iou)
         return boxes, scores, classes
 
@@ -119,7 +123,7 @@ class YOLO(object):
         image_data /= 255.
         image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
 
-        data = dict(zip(self.yolo_model.input,[image_data, np.zeros(1, 20, 64, 64, 3), np.ones(1), clz]))
+        data = dict(zip(self.yolo_model.input,[image_data, np.zeros((1, 20, 64, 64, 3)), np.ones((1,1)), np.ones((1,1),dtype=np.int32) * clz]))
         out_boxes, out_scores, out_classes = self.sess.run(
             [self.boxes, self.scores, self.classes],
             feed_dict={
@@ -267,3 +271,12 @@ def detect_video(yolo, video_path, output_path=""):
             break
     yolo.close_session()
 
+if __name__ == '__main__':
+    img_path = 'data/stdogs/Images/n02085620-Chihuahua/n02085620_9654.jpg'
+    path = 'data/output/n02085620_9654.jpg'
+    clz = 0
+    image = Image.open(img_path)
+    model = YOLO(**{})
+    image = image.resize(model.model_image_size)
+    res = model.detect_image(image, clz)
+    res.save(path)
