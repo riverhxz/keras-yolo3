@@ -665,9 +665,10 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
                 xy_loss + wh_loss + confidence_loss
             # + class_loss
         )
-        indice = tf.reshape(object_mask, [-1])
-        one = tf.argmax(indice, axis=1)
-        if True:
+
+        if False:
+            indice = tf.reshape(object_mask, [-1])
+            one = tf.argmax(indice, axis=1)
             loss = tf.Print(loss, [loss
                 , xy_loss
                 , wh_loss

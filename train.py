@@ -7,6 +7,7 @@ import keras.backend as K
 from keras.layers import Input, Lambda
 from keras.models import Model
 from keras.optimizers import Adam
+from keras_radam import RAdam
 from keras.callbacks import TensorBoard, ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 from keras import initializers
 from keras.engine import Layer, InputSpec
@@ -33,7 +34,7 @@ def eval():
     # classes_path = 'model_data/wood_board.txt'
     # anchors_path = 'model_data/wood_anchors.txt'
     # weight_path = 'logs/holes/trained_weights_final.h5'
-    annotation_path = 'data/stdogs/stdogs_debug.csv'
+    annotation_path = 'data/stdogs/stdogs_1.csv'
     log_dir = 'logs/stdogs/'
     classes_path = 'model_data/stdogs_classes.txt'
     anchors_path = 'model_data/yolo_anchors.txt'
@@ -73,7 +74,7 @@ def eval():
                       loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
         print('Unfreeze all of the layers.')
 
-        batch_size = 1  # note that more GPU memory is required after unfreezing the body
+        batch_size = 32  # note that more GPU memory is required after unfreezing the body
 
         model.evaluate_generator(data_generator_wrapper(lines, batch_size, input_shape, anchors,
                                                                    num_classes,random=True),steps=1)
@@ -134,11 +135,11 @@ def _main():
     # classes_path = 'model_data/wood_board.txt'
     # anchors_path = 'model_data/wood_anchors.txt'
     # weight_path = 'logs/holes/trained_weights_final.h5'
-    annotation_path = 'data/stdogs/stdogs_100.csv'
+    annotation_path = 'data/stdogs/stdogs_1.csv'
     log_dir = 'logs/stdogs/'
     classes_path = 'model_data/stdogs_classes.txt'
     anchors_path = 'model_data/yolo_anchors.txt'
-    weight_path = 'logs/stdogs/ep030-loss12.408-val_loss17.981.h5'
+    weight_path = None
 
     epoch = 200
 
@@ -174,7 +175,7 @@ def _main():
     # Unfreeze and continue training, to fine-tune.
     # Train longer if the result is not good.
     if True:
-        optimizer = Adam(lr=1e-5 * hvd.size(), clipvalue=1e1)
+        optimizer = RAdam(lr=1e-5 * hvd.size(), clipvalue=1e1)
         optimizer = hvd.DistributedOptimizer(optimizer)
 
         model.compile(optimizer=optimizer,
@@ -194,7 +195,7 @@ def _main():
         model.fit_generator(data_generator_wrapper(lines[:num_train], batch_size, input_shape, anchors, num_classes),
                             steps_per_epoch=max(1, num_train // batch_size // hvd.size()),
                             validation_data=data_generator_wrapper(lines[num_train:], batch_size, input_shape, anchors,
-                                                                   num_classes,random=False),
+                                                                   num_classes),
                             verbose=verbose,
                             validation_steps=max(1, num_val // batch_size // hvd.size()),
 
@@ -305,5 +306,5 @@ def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, n
 
 
 if __name__ == '__main__':
-    # _main()
-    eval()
+    _main()
+    # eval()
