@@ -2,13 +2,9 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="68ebd662-f6ae-467a-90cd-7497c94b61ef" name="Default" comment="add data split for multi-gpu train">
-      <change afterPath="$PROJECT_DIR$/ut/networks.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/yolo3/network.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker/dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/docker/dockerfile" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/train.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ut/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/ut/model.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/yolo3/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/model.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/yolo3/network.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/network.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -120,7 +116,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/yolo3/model.py</url>
-          <line>91</line>
+          <line>92</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
       </breakpoints>

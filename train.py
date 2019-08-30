@@ -147,7 +147,7 @@ def _main():
     epoch = epoch
     val_split = 0.1
     # class_names = get_classes(classes_path)
-    from sdog_annotation import train_classes as class_names
+    from stdog_config import all_classes as class_names
     num_classes = len(class_names)
     anchors = get_anchors(anchors_path)
 
@@ -161,8 +161,11 @@ def _main():
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5',
                                  monitor='val_loss', save_weights_only=True, save_best_only=True, period=5)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1)
-    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=1)
+    reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.1, patience=10, verbose=1)
+    early_stopping = EarlyStopping(monitor='loss', min_delta=0, patience=20, verbose=1)
+
+    # reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1)
+    # early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=1)
 
     val_split = 0.1
     with open(annotation_path) as f:
@@ -183,7 +186,7 @@ def _main():
                       loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
         print('Unfreeze all of the layers.')
 
-        batch_size = 16  # note that more GPU memory is required after unfreezing the body
+        batch_size = 24  # note that more GPU memory is required after unfreezing the body
         print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
         callbacks = [
             hvd.callbacks.BroadcastGlobalVariablesCallback(0)
