@@ -5,6 +5,7 @@ import unittest
 import tensorflow as tf
 tf.enable_eager_execution()
 from yolo3.model import _scatter_moving_avg
+import numpy as  np
 class MyTestCase(unittest.TestCase):
     def test_something(self):
 
@@ -22,6 +23,14 @@ class MyTestCase(unittest.TestCase):
         r = tf.unsorted_segment_mean(c, indice, 10)
         r1 = tf.gather(r, indice)
         print(r1)
+
+    def test_attention(self):
+        from yolo3.model import Matching
+        style = np.ones((2,2))
+        inputs = np.ones((2,4,4,2))
+        match = Matching(style,f_dim=2)
+        r = match(inputs)
+        print(r)
 
 if __name__ == '__main__':
     unittest.main()

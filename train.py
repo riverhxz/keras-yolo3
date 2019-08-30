@@ -15,6 +15,7 @@ from keras.engine import Layer, InputSpec
 from yolo3.model import preprocess_true_boxes, yolo_body, yolo_loss, yolo_body_adain, needle_preprocess
 from yolo3.utils import get_random_data
 
+from keras_contrib.layers import InstanceNormalization
 import horovod.keras as hvd
 
 import os
@@ -135,7 +136,7 @@ def _main():
     # classes_path = 'model_data/wood_board.txt'
     # anchors_path = 'model_data/wood_anchors.txt'
     # weight_path = 'logs/holes/trained_weights_final.h5'
-    annotation_path = 'data/stdogs/stdogs_1.csv'
+    annotation_path = 'data/stdogs/stdogs_all.csv'
     log_dir = 'logs/stdogs/'
     classes_path = 'model_data/stdogs_classes.txt'
     anchors_path = 'model_data/yolo_anchors.txt'
@@ -182,7 +183,7 @@ def _main():
                       loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
         print('Unfreeze all of the layers.')
 
-        batch_size = 2  # note that more GPU memory is required after unfreezing the body
+        batch_size = 16  # note that more GPU memory is required after unfreezing the body
         print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
         callbacks = [
             hvd.callbacks.BroadcastGlobalVariablesCallback(0)
@@ -231,8 +232,10 @@ def create_model_eval(num_anchors, num_classes,
     # K.clear_session()  # get a new session
     image_input = Input(shape=(None, None, 3))
     class_input = Input(shape=[1], dtype=tf.int32)
+
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
-    model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input, num_anchors // 3, num_classes)
+    kwargs = {"norm": InstanceNormalization}
+    model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input, num_anchors // 3, num_classes, **kwargs)
     model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
 
     return Model([*model_body.inputs, class_input], model_body.outputs)
@@ -254,9 +257,9 @@ def create_model_adain(input_shape, anchors, num_classes,
                            num_anchors // 3, deprected_num_classes + 5)) for l in range(3)]
     image_input = Input(shape=(None, None, 3))
     class_input = Input(shape=[1], dtype=tf.int32)
-
+    kwargs = {"norm":InstanceNormalization}
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
-    model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input, num_anchors // 3, num_classes)
+    model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input, num_anchors // 3, num_classes, **kwargs)
     if weights_path is not None:
         model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
     print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, deprected_num_classes))

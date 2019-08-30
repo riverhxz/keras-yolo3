@@ -4,6 +4,7 @@ from functools import wraps
 from keras.engine.base_layer import Layer, InputSpec
 import numpy as np
 import tensorflow as tf
+from keras_contrib.layers import InstanceNormalization
 from keras import backend as K, initializers
 from keras.layers import Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate, MaxPooling2D, Reshape, Lambda, Input
 from keras.layers.advanced_activations import LeakyReLU, ReLU
@@ -13,6 +14,7 @@ from keras.regularizers import l2
 from tensorflow.contrib.framework.python.ops.sort_ops import sort
 from keras.layers import Layer
 
+from yolo3.network import Matching
 from yolo3.utils import compose
 
 import sys
@@ -39,70 +41,84 @@ def DarknetConv2D(*args, **kwargs):
 def DarknetConv2D_BN_Leaky(*args, **kwargs):
     """Darknet Convolution2D followed by BatchNormalization and LeakyReLU."""
     no_bias_kwargs = {'use_bias': False}
+
+    normalizer = kwargs.get('norm')
     no_bias_kwargs.update(kwargs)
-    return compose(
-        DarknetConv2D(*args, **no_bias_kwargs),
-        BatchNormalization(),
-        LeakyReLU(alpha=0.1))
+
+    if normalizer is not None:
+        no_bias_kwargs.pop("norm")
+        module = compose(
+            DarknetConv2D(*args, **no_bias_kwargs),
+            normalizer(),
+            LeakyReLU(alpha=0.1))
+    else:
+        module = compose(
+            DarknetConv2D(*args, **no_bias_kwargs),
+            LeakyReLU(alpha=0.1))
+
+    return module
 
 
-def resblock_body(x, num_filters, num_blocks):
+def resblock_body(x, num_filters, num_blocks, **kwargs):
     '''A series of resblocks starting with a downsampling Convolution2D'''
     # Darknet uses left and top padding instead of 'same' mode
     x = ZeroPadding2D(((1, 0), (1, 0)))(x)
-    x = DarknetConv2D_BN_Leaky(num_filters, (3, 3), strides=(2, 2))(x)
+    x = DarknetConv2D_BN_Leaky(num_filters, (3, 3), strides=(2, 2), **kwargs)(x)
     for i in range(num_blocks):
         y = compose(
-            DarknetConv2D_BN_Leaky(num_filters // 2, (1, 1)),
-            DarknetConv2D_BN_Leaky(num_filters, (3, 3)))(x)
+            DarknetConv2D_BN_Leaky(num_filters // 2, (1, 1), **kwargs),
+            DarknetConv2D_BN_Leaky(num_filters, (3, 3), **kwargs))(x)
         x = Add()([x, y])
     return x
 
 
-def darknet_body(x):
+def darknet_body(x, **kwargs):
     '''Darknent body having 52 Convolution2D layers'''
-    x = DarknetConv2D_BN_Leaky(32, (3, 3))(x)
-    x = resblock_body(x, 64, 1)
-    x = resblock_body(x, 128, 2)
-    x = resblock_body(x, 256, 8)
-    x = resblock_body(x, 512, 8)
-    x = resblock_body(x, 1024, 4)
+    print("kwargs", kwargs)
+    x = DarknetConv2D_BN_Leaky(32, (3, 3), **kwargs)(x)
+    x = resblock_body(x, 64, 1, **kwargs)
+    x = resblock_body(x, 128, 2, **kwargs)
+    x = resblock_body(x, 256, 8, **kwargs)
+    x = resblock_body(x, 512, 8, **kwargs)
+    x = resblock_body(x, 1024, 4, **kwargs)
     return x
 
 
-def make_last_layers(x, num_filters, out_filters):
+def make_last_layers(x, num_filters, out_filters, **kwargs):
     '''6 Conv2D_BN_Leaky layers followed by a Conv2D_linear layer'''
     x = compose(
-        DarknetConv2D_BN_Leaky(num_filters, (1, 1)),
-        DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
-        DarknetConv2D_BN_Leaky(num_filters, (1, 1)),
-        DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
-        DarknetConv2D_BN_Leaky(num_filters, (1, 1)))(x)
+        DarknetConv2D_BN_Leaky(num_filters, (1, 1), **kwargs),
+        DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3), **kwargs),
+        DarknetConv2D_BN_Leaky(num_filters, (1, 1), **kwargs),
+        DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3), **kwargs),
+        DarknetConv2D_BN_Leaky(num_filters, (1, 1), **kwargs),
+    )(x)
     y = compose(
-        DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3)),
+        DarknetConv2D_BN_Leaky(num_filters * 2, (3, 3), **kwargs),
         DarknetConv2D(out_filters, (1, 1)))(x)
     return x, y
 
 
-def yolo_body(inputs, num_anchors, num_classes):
+def yolo_body(inputs, num_anchors, num_classes, **kwargs):
     """Create YOLO_V3 model CNN body in Keras."""
     darknet = Model(inputs, darknet_body(inputs))
 
-    x, y1 = make_last_layers(darknet.output, 512, num_anchors * (num_classes + 5))
+    x, y1 = make_last_layers(darknet.output, 512, num_anchors * (num_classes + 5), **kwargs)
 
     x = compose(
-        DarknetConv2D_BN_Leaky(256, (1, 1)),
+        DarknetConv2D_BN_Leaky(256, (1, 1), **kwargs),
         UpSampling2D(2))(x)
     x = Concatenate()([x, darknet.layers[152].output])
-    x, y2 = make_last_layers(x, 256, num_anchors * (num_classes + 5))
+    x, y2 = make_last_layers(x, 256, num_anchors * (num_classes + 5), **kwargs)
 
     x = compose(
-        DarknetConv2D_BN_Leaky(128, (1, 1)),
+        DarknetConv2D_BN_Leaky(128, (1, 1), **kwargs),
         UpSampling2D(2))(x)
     x = Concatenate()([x, darknet.layers[92].output])
-    x, y3 = make_last_layers(x, 128, num_anchors * (num_classes + 5))
+    x, y3 = make_last_layers(x, 128, num_anchors * (num_classes + 5), **kwargs)
 
     return Model(inputs, [y1, y2, y3])
+
 
 
 class Adain(BatchNormalization):
@@ -243,69 +259,71 @@ def _scatter_moving_avg(ref, index, updates, momentum):
 
 
 def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_class,
-                    deprecated_num_classes=1):
+                    deprecated_num_classes=1, **kwargs):
     """Create YOLO_V3 model CNN body in Keras."""
-    darknet = Model(inputs, darknet_body(inputs))
+    print("yolo_body_adain", kwargs)
+    darknet = Model(inputs, darknet_body(inputs, **kwargs))
 
     style = SwitchLayer(needle_class=needle_class, training_classes=num_class)(needle_embedding)
 
     x = darknet.outputs[0]
-    x = Adain(style)(x)
+
+    x = Matching(style, K.get_variable_shape(x)[-1])(x)
 
     print('shape of k', K.get_variable_shape(x), K.get_variable_shape(darknet.output))
-    x, y1 = make_last_layers(x, 512, num_anchors * (deprecated_num_classes + 5))
+    x, y1 = make_last_layers(x, 512, num_anchors * (deprecated_num_classes + 5), **kwargs)
     x = compose(
-        DarknetConv2D_BN_Leaky(256, (1, 1)),
+        DarknetConv2D_BN_Leaky(256, (1, 1), **kwargs),
         UpSampling2D(2))(x)
     # x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\ncompose:"))(x)
     x = Concatenate()([x, darknet.layers[152].output])
 
-    x = Adain(style)(x)
+    x = Matching(style, K.get_variable_shape(x)[-1])(x)
 
     # x = Lambda(lambda a: tf.Print(a, [a], "\nconcate:"))(x)
-    x, y2 = make_last_layers(x, 256, num_anchors * (deprecated_num_classes + 5))
+    x, y2 = make_last_layers(x, 256, num_anchors * (deprecated_num_classes + 5), **kwargs)
 
     x = compose(
-        DarknetConv2D_BN_Leaky(128, (1, 1)),
+        DarknetConv2D_BN_Leaky(128, (1, 1), **kwargs),
         UpSampling2D(2))(x)
     x = Concatenate()([x, darknet.layers[92].output])
-    x = Adain(style)(x)
+    x = Matching(style, K.get_variable_shape(x)[-1])(x)
 
-    x, y3 = make_last_layers(x, 128, num_anchors * (deprecated_num_classes + 5))
+    x, y3 = make_last_layers(x, 128, num_anchors * (deprecated_num_classes + 5), **kwargs)
 
     # y3 = Lambda(lambda a: tf.Print(a, [ tf.shape(a)], "\ntt:", summarize=10))(y3)
 
     return Model([inputs] + needle_inputs, [y1, y2, y3])
 
 
-def tiny_yolo_body(inputs, num_anchors, num_classes):
+def tiny_yolo_body(inputs, num_anchors, num_classes, **kwargs):
     '''Create Tiny YOLO_v3 model CNN body in keras.'''
     x1 = compose(
-        DarknetConv2D_BN_Leaky(16, (3, 3)),
+        DarknetConv2D_BN_Leaky(16, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(32, (3, 3)),
+        DarknetConv2D_BN_Leaky(32, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(64, (3, 3)),
+        DarknetConv2D_BN_Leaky(64, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(128, (3, 3)),
+        DarknetConv2D_BN_Leaky(128, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(256, (3, 3)))(inputs)
+        DarknetConv2D_BN_Leaky(256, (3, 3), **kwargs))(inputs)
     x2 = compose(
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(512, (3, 3)),
+        DarknetConv2D_BN_Leaky(512, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(1, 1), padding='same'),
-        DarknetConv2D_BN_Leaky(1024, (3, 3)),
-        DarknetConv2D_BN_Leaky(256, (1, 1)))(x1)
+        DarknetConv2D_BN_Leaky(1024, (3, 3), **kwargs),
+        DarknetConv2D_BN_Leaky(256, (1, 1), **kwargs))(x1)
     y1 = compose(
-        DarknetConv2D_BN_Leaky(512, (3, 3)),
+        DarknetConv2D_BN_Leaky(512, (3, 3), **kwargs),
         DarknetConv2D(num_anchors * (num_classes + 5), (1, 1)))(x2)
 
     x2 = compose(
-        DarknetConv2D_BN_Leaky(128, (1, 1)),
+        DarknetConv2D_BN_Leaky(128, (1, 1), **kwargs),
         UpSampling2D(2))(x2)
     y2 = compose(
         Concatenate(),
-        DarknetConv2D_BN_Leaky(256, (3, 3)),
+        DarknetConv2D_BN_Leaky(256, (3, 3), **kwargs),
         DarknetConv2D(num_anchors * (num_classes + 5), (1, 1)))([x2, x1])
 
     return Model(inputs, [y1, y2])
@@ -342,28 +360,28 @@ def needle_preprocess(max_box_length=10, image_size=64):
     return Model([needle_input, needle_input_num], [out])
 
 
-def tiny_yolo_backbone(inputs):
+def tiny_yolo_backbone(inputs, **kwargs):
     '''Create Tiny YOLO_v3 model CNN body in keras.'''
 
     needle_input_shape = list(K.get_variable_shape(inputs))
     x = Lambda(lambda x: tf.reshape(x, [-1] + needle_input_shape[-3:])
                , output_shape=needle_input_shape[-3:])(inputs)
     x1 = compose(
-        DarknetConv2D_BN_Leaky(16, (3, 3)),
+        DarknetConv2D_BN_Leaky(16, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(32, (3, 3)),
+        DarknetConv2D_BN_Leaky(32, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(64, (3, 3)),
+        DarknetConv2D_BN_Leaky(64, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(128, (3, 3)),
+        DarknetConv2D_BN_Leaky(128, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(256, (3, 3)))(x)
+        DarknetConv2D_BN_Leaky(256, (3, 3), **kwargs))(x)
     x2 = compose(
         MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'),
-        DarknetConv2D_BN_Leaky(512, (3, 3)),
+        DarknetConv2D_BN_Leaky(512, (3, 3), **kwargs),
         MaxPooling2D(pool_size=(2, 2), strides=(1, 1), padding='same'),
-        DarknetConv2D_BN_Leaky(1024, (3, 3)),
-        DarknetConv2D_BN_Leaky(256, (1, 1)))(x1)
+        DarknetConv2D_BN_Leaky(1024, (3, 3), **kwargs),
+        DarknetConv2D_BN_Leaky(256, (1, 1), **kwargs))(x1)
 
     return Model(inputs, [x2])
 
