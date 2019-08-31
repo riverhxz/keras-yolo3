@@ -3,7 +3,9 @@
   <component name="ChangeListManager">
     <list default="true" id="68ebd662-f6ae-467a-90cd-7497c94b61ef" name="Default" comment="add data split for multi-gpu train">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/train.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker/dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/docker/dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ut/networks.py" beforeDir="false" afterPath="$PROJECT_DIR$/ut/networks.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/yolo3/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/model.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolo3/network.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/network.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -52,21 +54,7 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="Python tests.Unittests for networks.MyTestCase.test_attention">
-    <configuration name="Unittests for model.MyTestCase.test_attention" type="tests" factoryName="Unittests" temporary="true" nameIsGenerated="true">
-      <module name="keras-qqwwee" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/ut" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="_new_additionalArguments" value="&quot;&quot;" />
-      <option name="_new_target" value="&quot;model.MyTestCase.test_attention&quot;" />
-      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
-      <method v="2" />
-    </configuration>
+  <component name="RunManager" selected="Python tests.Unittests for networks.MyTestCase.test_vanilla_position">
     <configuration name="Unittests for networks.MyTestCase.test_attention" type="tests" factoryName="Unittests" temporary="true" nameIsGenerated="true">
       <module name="keras-qqwwee" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -81,10 +69,69 @@
       <option name="_new_targetType" value="&quot;PYTHON&quot;" />
       <method v="2" />
     </configuration>
+    <configuration name="Unittests for networks.MyTestCase.test_einsum" type="tests" factoryName="Unittests" temporary="true" nameIsGenerated="true">
+      <module name="keras-qqwwee" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/ut" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;networks.MyTestCase.test_einsum&quot;" />
+      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="Unittests for networks.MyTestCase.test_vanilla" type="tests" factoryName="Unittests" temporary="true" nameIsGenerated="true">
+      <module name="keras-qqwwee" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/ut" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;networks.MyTestCase.test_vanilla&quot;" />
+      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="Unittests for networks.MyTestCase.test_vanilla_channel" type="tests" factoryName="Unittests" temporary="true" nameIsGenerated="true">
+      <module name="keras-qqwwee" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/ut" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;networks.MyTestCase.test_vanilla_channel&quot;" />
+      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="Unittests for networks.MyTestCase.test_vanilla_position" type="tests" factoryName="Unittests" temporary="true" nameIsGenerated="true">
+      <module name="keras-qqwwee" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/ut" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;networks.MyTestCase.test_vanilla_position&quot;" />
+      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
+      <method v="2" />
+    </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Python tests.Unittests for networks.MyTestCase.test_vanilla_position" />
+        <item itemvalue="Python tests.Unittests for networks.MyTestCase.test_vanilla_channel" />
+        <item itemvalue="Python tests.Unittests for networks.MyTestCase.test_vanilla" />
+        <item itemvalue="Python tests.Unittests for networks.MyTestCase.test_einsum" />
         <item itemvalue="Python tests.Unittests for networks.MyTestCase.test_attention" />
-        <item itemvalue="Python tests.Unittests for model.MyTestCase.test_attention" />
       </list>
     </recent_temporary>
   </component>
@@ -116,8 +163,18 @@
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/yolo3/model.py</url>
-          <line>92</line>
+          <line>56</line>
           <option name="timeStamp" value="1" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/yolo3/network.py</url>
+          <line>91</line>
+          <option name="timeStamp" value="2" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/ut/networks.py</url>
+          <line>20</line>
+          <option name="timeStamp" value="3" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

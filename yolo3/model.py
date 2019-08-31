@@ -1,26 +1,19 @@
 """YOLO_v3 Model Defined in Keras."""
 
-from functools import wraps
-from keras.engine.base_layer import Layer, InputSpec
+import sys
+
+import horovod.tensorflow as hvd
 import numpy as np
 import tensorflow as tf
-from keras_contrib.layers import InstanceNormalization
 from keras import backend as K, initializers
-from keras.layers import Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate, MaxPooling2D, Reshape, Lambda, Input
-from keras.layers.advanced_activations import LeakyReLU, ReLU
+from keras.layers import Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate, MaxPooling2D, Lambda, Input
+from keras.layers import Layer
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model
-from keras.regularizers import l2
 from tensorflow.contrib.framework.python.ops.sort_ops import sort
-from keras.layers import Layer
 
-from yolo3.network import Matching
+from yolo3.network import Matching, MatchingVanilla, DarknetConv2D_BN_Leaky, DarknetConv2D
 from yolo3.utils import compose
-
-import sys
-import inspect
-import tensorflow as tf
-import horovod.tensorflow as hvd
 
 
 def debug(*args):
@@ -28,35 +21,6 @@ def debug(*args):
     # print(func.co_firstlineno, *args)
     pass
 
-
-@wraps(Conv2D)
-def DarknetConv2D(*args, **kwargs):
-    """Wrapper to set Darknet parameters for Convolution2D."""
-    darknet_conv_kwargs = {'kernel_regularizer': l2(5e-4)}
-    darknet_conv_kwargs['padding'] = 'valid' if kwargs.get('strides') == (2, 2) else 'same'
-    darknet_conv_kwargs.update(kwargs)
-    return Conv2D(*args, **darknet_conv_kwargs)
-
-
-def DarknetConv2D_BN_Leaky(*args, **kwargs):
-    """Darknet Convolution2D followed by BatchNormalization and LeakyReLU."""
-    no_bias_kwargs = {'use_bias': False}
-
-    normalizer = kwargs.get('norm')
-    no_bias_kwargs.update(kwargs)
-
-    if normalizer is not None:
-        no_bias_kwargs.pop("norm")
-        module = compose(
-            DarknetConv2D(*args, **no_bias_kwargs),
-            normalizer(),
-            LeakyReLU(alpha=0.1))
-    else:
-        module = compose(
-            DarknetConv2D(*args, **no_bias_kwargs),
-            LeakyReLU(alpha=0.1))
-
-    return module
 
 
 def resblock_body(x, num_filters, num_blocks, **kwargs):
@@ -267,8 +231,9 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_a
     style = SwitchLayer(needle_class=needle_class, training_classes=num_class)(needle_embedding)
 
     x = darknet.outputs[0]
-
-    x = Matching(style, K.get_variable_shape(x)[-1])(x)
+    att_head_num = 8
+    x = MatchingVanilla(style, K.get_variable_shape(x)[-1] // att_head_num, att_head_num)
+    # x = Matching(style, K.get_variable_shape(x)[-1])(x)
 
     print('shape of k', K.get_variable_shape(x), K.get_variable_shape(darknet.output))
     x, y1 = make_last_layers(x, 512, num_anchors * (deprecated_num_classes + 5), **kwargs)
@@ -278,7 +243,8 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_a
     # x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\ncompose:"))(x)
     x = Concatenate()([x, darknet.layers[152].output])
 
-    x = Matching(style, K.get_variable_shape(x)[-1])(x)
+    x = MatchingVanilla(style, K.get_variable_shape(x)[-1] // att_head_num, att_head_num)
+    # x = Matching(style, K.get_variable_shape(x)[-1])(x)
 
     # x = Lambda(lambda a: tf.Print(a, [a], "\nconcate:"))(x)
     x, y2 = make_last_layers(x, 256, num_anchors * (deprecated_num_classes + 5), **kwargs)
@@ -287,7 +253,8 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_a
         DarknetConv2D_BN_Leaky(128, (1, 1), **kwargs),
         UpSampling2D(2))(x)
     x = Concatenate()([x, darknet.layers[92].output])
-    x = Matching(style, K.get_variable_shape(x)[-1])(x)
+    x = MatchingVanilla(style, K.get_variable_shape(x)[-1] // att_head_num, att_head_num)
+    # x = Matching(style, K.get_variable_shape(x)[-1])(x)
 
     x, y3 = make_last_layers(x, 128, num_anchors * (deprecated_num_classes + 5), **kwargs)
 

@@ -21,10 +21,10 @@ RUN apt-get update && apt-get install -y --allow-downgrades --allow-change-held-
         libpng-dev
 
 # Install python package
-RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple efficientnet_pytorch && \
-    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple nonechucks && \
-    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple tensorboardX && \
-    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple tqdm && \
+RUN pip install efficientnet_pytorch && \
+    pip install nonechucks && \
+    pip install tensorboardX && \
+    pip install tqdm && \
     pip install keras-rectified-adam && \
     pip install git+https://www.github.com/keras-team/keras-contrib.git
 
