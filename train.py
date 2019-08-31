@@ -75,7 +75,7 @@ def eval():
                       loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
         print('Unfreeze all of the layers.')
 
-        batch_size = 32  # note that more GPU memory is required after unfreezing the body
+        batch_size = 16  # note that more GPU memory is required after unfreezing the body
 
         model.evaluate_generator(data_generator_wrapper(lines, batch_size, input_shape, anchors,
                                                                    num_classes,random=True),steps=1)

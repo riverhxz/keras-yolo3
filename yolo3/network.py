@@ -101,14 +101,15 @@ class MatchingVanilla(Layer):
                  , dim_per_head
                  , num_head
                  ,**kwargs):
-        super(Matching, self).__init__(**kwargs)
+        super(MatchingVanilla, self).__init__(**kwargs)
         self.style_coding = style_coding
         self.dim_per_head = dim_per_head
         self.num_head = num_head
+        init = initializers.get("he_normal")
         self.w_channel_vanilla_attention = self.add_weight("w_vanilla_attention",
-                                                           [self.dim_per_head * 2, self.dim_per_head])
+                                                           [self.dim_per_head * 2, self.dim_per_head],initializer=init)
         self.w_positional_vanilla_attention = self.add_weight("w_vanilla_attention",
-                                                           [self.dim_per_head * 2, self.num_head])
+                                                           [self.dim_per_head * 2, self.num_head],initializer=init)
 
     @staticmethod
     def _channel_wised_attention(q, k, d):
@@ -152,8 +153,11 @@ class MatchingVanilla(Layer):
         a = tf.concat([q, k], axis=3)
         for _ in range(3):
             w = tf.expand_dims(w, 0)
-        w = tf.broadcast_to(w, [1, shape_k[1], shape_k[2], dim_total * 2, dim_total])
-        a = tf.einsum("...whd,...whdc->...c", a, w) / tf.sqrt(dim_per_head * 1.0)
+        w = tf.broadcast_to(w, [shape_k[0], shape_k[1], shape_k[2], dim_total * 2, dim_total])
+
+        a = tf.einsum("awhd,awhdc->ac", a, w) / tf.sqrt(dim_per_head * 1.0)
+        # for tf 1.14
+        # a = tf.einsum("...whd,...whdc->...c", a, w) / tf.sqrt(dim_per_head * 1.0)
         a = tf.reshape(a, [shape_k[0], 1, 1, dim_per_head, num_head])
         a = tf.nn.softmax(a, 3)
         a = tf.reshape(a, [shape_k[0], 1, 1, dim_per_head * num_head])
@@ -176,9 +180,10 @@ class MatchingVanilla(Layer):
         a = tf.concat([q, k], axis=3)
         for _ in range(3):
             w = tf.expand_dims(w, 0)
-        w = tf.broadcast_to(w, [1, shape_k[1], shape_k[2], dim_total * 2, num_head])
+        w = tf.broadcast_to(w, [shape_k[0], shape_k[1], shape_k[2], dim_total * 2, num_head])
 
-        a = tf.einsum("...whd,...whdc->...whc", a, w) / tf.sqrt(dim_per_head * 1.0)
+        a = tf.einsum("awhd,awhdc->awhc", a, w) / tf.sqrt(dim_per_head * 1.0)
+        # a = tf.einsum("...whd,...whdc->...whc", a, w) / tf.sqrt(dim_per_head * 1.0)
         # normalize attention
         a = tf.reshape(a, [shape_k[0], shape_k[1] * shape_k[2], num_head])
         a = tf.nn.softmax(a, 1)
@@ -197,7 +202,7 @@ class MatchingVanilla(Layer):
         position_attention = self.multi_head_vanilla_position_attention(
             self.w_positional_vanilla_attention, q, k, v, self.dim_per_head, self.num_head)
 
-        return tf.concat([channel_attention, position_attention])
+        return tf.concat([channel_attention, position_attention], axis=3)
 
     def call(self, inputs, training=None):
         input_shape = K.int_shape(inputs)
