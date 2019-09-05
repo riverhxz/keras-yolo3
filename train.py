@@ -142,7 +142,7 @@ def _main():
     anchors_path = 'model_data/yolo_anchors.txt'
     weight_path = None
 
-    epoch = 200
+    epoch = 300
 
     epoch = epoch
     val_split = 0.1

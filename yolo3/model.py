@@ -231,9 +231,10 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_a
     style = SwitchLayer(needle_class=needle_class, training_classes=num_class)(needle_embedding)
 
     x = darknet.outputs[0]
-    att_head_num = 8
-    x = MatchingVanilla(style, K.get_variable_shape(x)[-1] // att_head_num, att_head_num)(x)
-    # x = Matching(style, K.get_variable_shape(x)[-1])(x)
+    att_head_num = 1
+    # x = MatchingVanilla(style, K.get_variable_shape(x)[-1] // att_head_num, att_head_num)(x)
+    x = Matching(style, K.get_variable_shape(x)[-1])(x)
+
 
     print('shape of k', K.get_variable_shape(x), K.get_variable_shape(darknet.output))
     x, y1 = make_last_layers(x, 512, num_anchors * (deprecated_num_classes + 5), **kwargs)
@@ -243,8 +244,8 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_a
     # x = Lambda(lambda a: tf.Print(a, [a,tf.shape(a)], "\ncompose:"))(x)
     x = Concatenate()([x, darknet.layers[152].output])
 
-    x = MatchingVanilla(style, K.get_variable_shape(x)[-1] // att_head_num, att_head_num)(x)
-    # x = Matching(style, K.get_variable_shape(x)[-1])(x)
+    # x = MatchingVanilla(style, K.get_variable_shape(x)[-1] // att_head_num, att_head_num)(x)
+    x = Matching(style, K.get_variable_shape(x)[-1])(x)
 
     # x = Lambda(lambda a: tf.Print(a, [a], "\nconcate:"))(x)
     x, y2 = make_last_layers(x, 256, num_anchors * (deprecated_num_classes + 5), **kwargs)
@@ -253,8 +254,8 @@ def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_a
         DarknetConv2D_BN_Leaky(128, (1, 1), **kwargs),
         UpSampling2D(2))(x)
     x = Concatenate()([x, darknet.layers[92].output])
-    x = MatchingVanilla(style, K.get_variable_shape(x)[-1] // att_head_num, att_head_num)(x)
-    # x = Matching(style, K.get_variable_shape(x)[-1])(x)
+    # x = MatchingVanilla(style, K.get_variable_shape(x)[-1] // att_head_num, att_head_num)(x)
+    x = Matching(style, K.get_variable_shape(x)[-1])(x)
 
     x, y3 = make_last_layers(x, 128, num_anchors * (deprecated_num_classes + 5), **kwargs)
 
