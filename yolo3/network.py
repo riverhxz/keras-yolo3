@@ -10,6 +10,7 @@ from functools import wraps
 # from yolo3.model import DarknetConv2D_BN_Leaky
 from yolo3.utils import compose
 
+from keras_contrib.layers import InstanceNormalization
 
 def shape_t(s):
     print(tf.shape(s))
@@ -43,6 +44,7 @@ def DarknetConv2D_BN_Leaky(*args, **kwargs):
             LeakyReLU(alpha=0.1))
 
     return module
+
 
 #
 # class Matching(Layer):
@@ -108,7 +110,6 @@ def shape_t(s):
     print(tf.shape(s))
 
 
-
 class Matching(Layer):
     def __init__(self, style_coding, f_dim, eps=1e-5,
                  **kwargs):
@@ -117,41 +118,51 @@ class Matching(Layer):
         self.eps = eps
 
     @staticmethod
-    def _channel_wised_attention(q, k, d):
+    def _channel_wised_attention(q, k, v, d):
         # for _ in range(2):
         #     q = K.expand_dims(q, 1)
         # q1 = tf.broadcast_to(q, tf.shape(k))
+        q = no_bias_leaky_dense(d)(q)
+        k = DarknetConv2D_BN_Leaky(d, (1, 1))(k)
+        v = DarknetConv2D_BN_Leaky(d, (1, 1))(v)
+
         a = tf.einsum("nwhc,nc->nc", k, q) / tf.sqrt(d * 1.0)
         a = tf.nn.softmax(a, -1)
-
         for _ in range(2):
             a = K.expand_dims(a, 1)
-        return a
+        return a * v
 
     @staticmethod
-    def _position_wised_attention(q, k, d):
+    def _position_wised_attention(q, k, v, d):
+
+        q = no_bias_leaky_dense(d)(q)
+        k = DarknetConv2D_BN_Leaky(d, (1, 1))(k)
+        v = DarknetConv2D_BN_Leaky(d, (1, 1))(v)
+
         for _ in range(2):
             q = K.expand_dims(q, 1)
         q1 = tf.broadcast_to(q, tf.shape(k))
         shape_k = tf.shape(k)
-        a = tf.einsum("nwhc,nwhc->nwh", k, q1) // tf.sqrt(d * 1.0)
 
-        a = tf.reshape(a, [shape_k[0],shape_k[1]*shape_k[2]])
+        a = tf.einsum("nwhc,nwhc->nwh", k, q1) / tf.sqrt(d * 1.0)
+
+        a = tf.reshape(a, [shape_k[0], shape_k[1] * shape_k[2]])
         a = tf.nn.softmax(a, 1)
-        a = tf.reshape(a, [shape_k[0],shape_k[1],shape_k[2], 1])
-        return a
+        a = tf.reshape(a, [shape_k[0], shape_k[1], shape_k[2], 1])
+        return a * v
 
     def apply_all_attentions(self, q, k, v, d):
-        channel_attention = self._channel_wised_attention(q, k, d)
+        channel_attention = self._channel_wised_attention(q, k, v, d)
 
-        position_attention = self._position_wised_attention(q, k, d)
-        return v * channel_attention * position_attention
+        position_attention = self._position_wised_attention(q, k, v, d)
+        return tf.concat([channel_attention, position_attention], axis=3)
 
     def call(self, inputs, training=None):
         input_shape = K.int_shape(inputs)
         fout_dim = input_shape[-1]
         x = Dense(fout_dim, use_bias=False, activation='relu')(self.style_coding)
         x = self.apply_all_attentions(x, inputs, inputs, fout_dim)
+        x = DarknetConv2D_BN_Leaky(fout_dim, (1, 1), norm=InstanceNormalization)(x)
         return x
 
 
@@ -241,8 +252,6 @@ class MatchingVanilla(Layer):
         a = tf.reshape(a, [shape_k[0], shape_k[1], shape_k[2], 1])
 
         return a
-
-
 
     @staticmethod
     def multi_head_vanilla_channel_attention(q, k, v, dim_per_head, num_head, w):

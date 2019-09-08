@@ -4,7 +4,6 @@
     <list default="true" id="68ebd662-f6ae-467a-90cd-7497c94b61ef" name="Default" comment="add data split for multi-gpu train">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/train.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ut/networks.py" beforeDir="false" afterPath="$PROJECT_DIR$/ut/networks.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolo3/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/model.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yolo3/network.py" beforeDir="false" afterPath="$PROJECT_DIR$/yolo3/network.py" afterDir="false" />
     </list>
@@ -32,14 +31,15 @@
   <component name="ProjectId" id="1Q0EZTK1XEWGo5JKTqsxJkqTwK4" />
   <component name="PropertiesComponent">
     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/ut" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
   </component>
   <component name="RecentsManager">
-    <key name="CopyFile.RECENT_KEYS">
-      <recent name="$PROJECT_DIR$/ut" />
-    </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/yolo3" />
+    </key>
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+      <recent name="$PROJECT_DIR$/ut" />
     </key>
   </component>
   <component name="RunDashboard">
@@ -180,7 +180,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/yolo3/network.py</url>
-          <line>95</line>
+          <line>110</line>
           <option name="timeStamp" value="2" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
@@ -190,7 +190,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/yolo3/network.py</url>
-          <line>204</line>
+          <line>215</line>
           <option name="timeStamp" value="4" />
         </line-breakpoint>
       </breakpoints>

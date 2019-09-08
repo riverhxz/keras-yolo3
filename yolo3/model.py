@@ -6,7 +6,7 @@ import horovod.tensorflow as hvd
 import numpy as np
 import tensorflow as tf
 from keras import backend as K, initializers
-from keras.layers import Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate, MaxPooling2D, Lambda, Input
+from keras.layers import Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate, MaxPooling2D, Lambda, Input, Dense
 from keras.layers import Layer
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model
@@ -221,6 +221,10 @@ def _scatter_moving_avg(ref, index, updates, momentum):
     op = tf.scatter_update(ref, class_ids, new_value)
     return op
 
+
+def classify_head(x, num_class):
+    logits = Dense(num_class, initializer=initializers.get("henormal"))(x)
+    return logits
 
 def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_class,
                     deprecated_num_classes=1, **kwargs):
@@ -606,6 +610,7 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
     m = K.shape(yolo_outputs[0])[0]  # batch size, tensor
     mf = K.cast(m, K.dtype(yolo_outputs[0]))
 
+    classify_loss = K.binary_crossentropy(y_true[0][..., 5:6], args[-1], from_logits=True)
     for l in range(num_layers):
         object_mask = y_true[l][..., 4:5]
         true_class_probs = y_true[l][..., 5:]
@@ -663,4 +668,5 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
                                    ]
                             , summarize=1000
                             , message='loss: ')
+        loss += classify_loss
     return loss
