@@ -39,7 +39,7 @@ def eval():
     log_dir = 'logs/stdogs/'
     classes_path = 'model_data/stdogs_classes.txt'
     anchors_path = 'model_data/yolo_anchors.txt'
-    weight_path = 'logs/stdogs/ep290-loss3.458-val_loss3.789.h5'
+    weight_path = 'logs/stdogs/ep065-loss9.591-val_loss9.389.h5'
 
     epoch = 200
 
@@ -78,7 +78,8 @@ def eval():
         batch_size = 16  # note that more GPU memory is required after unfreezing the body
 
         model.evaluate_generator(data_generator_wrapper(lines, batch_size, input_shape, anchors,
-                                                        num_classes, random=True), steps=1)
+                                                        num_classes, random=True), steps=1, workers=16,
+                                 use_multiprocessing=True)
 
 
 def test():
@@ -166,15 +167,24 @@ def visual():
 
     plines = lines
     batch_size = 16
-    result = model.predict_generator(data_generator_wrapper(plines, batch_size, input_shape, anchors, num_classes, output_schema='box_image_data'), steps=1000, workers=4,verbose=True,use_multiprocessing=True)
+    result = []
+    clz = []
+    generator = data_generator_wrapper(plines
+                                       , batch_size, input_shape, anchors
+                                       , num_classes, output_schema='box_image_data')
+    for i in range(1000):
+        box_image_data, box_len_data, class_picked_data = generator.__next__()
+        a = model.predict(box_image_data, box_len_data)
+        result.append(a)
+        clz.append(box_len_data)
+    # result = model.predict_generator(data_generator_wrapper(plines, batch_size, input_shape, anchors, num_classes, output_schema='box_image_data'), steps=1000, workers=4,verbose=True,use_multiprocessing=True)
 
     import pandas as pd
-    result:pd.DataFrame = pd.DataFrame(np.stack(result, axis=0))
-    result.to_csv(output_needle_fn, sep='\t',header=False,index=None)
+    result: pd.DataFrame = pd.DataFrame(np.stack(result, axis=0))
+    result.to_csv(output_needle_fn, sep='\t', header=False, index=None)
 
-    metadata = [int(x.strip().split(",")[-1]) for x in plines]
-    metadata = pd.DataFrame(metadata,columns=["clz"])
-    metadata.to_csv(output_neddle_meta_fn,sep='\t',index=None)
+    metadata = pd.DataFrame(np.stack(clz, axis=0), columns=["clz"])
+    metadata.to_csv(output_neddle_meta_fn, index=None)
 
 
 def _main():
@@ -209,8 +219,8 @@ def _main():
     logging = TensorBoard(log_dir=log_dir)
     checkpoint = ModelCheckpoint(log_dir + 'ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}.h5',
                                  monitor='val_loss', save_weights_only=True, save_best_only=True, period=5)
-    reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.1, patience=10, verbose=1)
-    early_stopping = EarlyStopping(monitor='loss', min_delta=0, patience=20, verbose=1)
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1)
+    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=1)
 
     # reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, verbose=1)
     # early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=1)
@@ -227,14 +237,14 @@ def _main():
     # Unfreeze and continue training, to fine-tune.
     # Train longer if the result is not good.
     if True:
-        optimizer = RAdam(lr=1e-5 * hvd.size(), clipvalue=1e1)
+        optimizer = RAdam(lr=1e-3 * hvd.size(), clipvalue=1e1)
         optimizer = hvd.DistributedOptimizer(optimizer)
 
         model.compile(optimizer=optimizer,
                       loss={'yolo_loss': lambda y_true, y_pred: y_pred})  # recompile to apply the change
         print('Unfreeze all of the layers.')
 
-        batch_size = 24  # note that more GPU memory is required after unfreezing the body
+        batch_size = 16  # note that more GPU memory is required after unfreezing the body
         print('Train on {} samples, val on {} samples, with batch size {}.'.format(num_train, num_val, batch_size))
         callbacks = [
             hvd.callbacks.BroadcastGlobalVariablesCallback(0)
@@ -284,9 +294,9 @@ def create_model_eval(num_anchors, num_classes,
     # K.clear_session()  # get a new session
     image_input = Input(shape=(None, None, 3))
     class_input = Input(shape=[1], dtype=tf.int32)
-
-    needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
     kwargs = {"norm": InstanceNormalization}
+    needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
+
     model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input,
                                  num_anchors // 3, num_classes, **kwargs)
     model_body.load_weights(weights_path, by_name=True, skip_mismatch=True)
@@ -311,7 +321,8 @@ def create_model_adain(input_shape, anchors, num_classes,
     class_input = Input(shape=[1], dtype=tf.int32)
     kwargs = {"norm": InstanceNormalization}
     needle_embedding = needle_preprocess(max_box_length=max_box_length, image_size=needle_size)
-    classify = classify_head(needle_embedding, num_classes)
+    class_logits = classify_head(needle_embedding.output, num_classes)
+    print('class_logits', K.get_variable_shape(class_logits))
     model_body = yolo_body_adain(image_input, needle_embedding.inputs, needle_embedding.output, class_input,
                                  num_anchors // 3, num_classes, **kwargs)
 
@@ -320,8 +331,8 @@ def create_model_adain(input_shape, anchors, num_classes,
     print('Create YOLOv3 model with {} anchors and {} classes.'.format(num_anchors, deprected_num_classes))
     model_loss = Lambda(yolo_loss, output_shape=(1,), name='yolo_loss',
                         arguments={'anchors': anchors, 'num_classes': deprected_num_classes, 'ignore_thresh': 0.5})(
-        [*model_body.output, *y_true])
-    model = Model([*model_body.inputs, class_input, *y_true,classify], model_loss)
+        [*model_body.output, *y_true, class_logits, class_input])
+    model = Model([*model_body.inputs, class_input, *y_true], model_loss)
 
     return model
 
@@ -351,19 +362,21 @@ def data_generator(annotation_lines, batch_size, input_shape, anchors, num_class
         box_image_data = []
         box_len_data = []
         class_picked_data = []
-        for b in range(batch_size * size):
+        while len(image_data) != batch_size:
+
             if i == 0:
                 np.random.shuffle(annotation_lines)
-            if b % size != rank:
-                continue
             image, box, box_images, box_len, class_picked = get_random_data(annotation_lines[i], input_shape,
                                                                             random=random)
-            image_data.append(image)
-            box_data.append(box)
-            box_image_data.append(box_images)
-            box_len_data.append(box_len)
-            class_picked_data.append(class_picked)
-            i = (i + 1) % n
+            if box_len > 0:
+                image_data.append(image)
+                box_data.append(box)
+                box_image_data.append(box_images)
+                box_len_data.append(box_len)
+                class_picked_data.append(class_picked)
+
+            i = (i + size) % n
+
         image_data = np.array(image_data)
         box_data = np.array(box_data)
         box_image_data = np.stack(box_image_data, 0)
@@ -373,7 +386,7 @@ def data_generator(annotation_lines, batch_size, input_shape, anchors, num_class
         if output_schema == 'all':
             yield [image_data, box_image_data, box_len_data, class_picked_data, *y_true], np.zeros(batch_size)
         if output_schema == 'box_image_data':
-            yield [box_image_data, box_len_data]
+            yield [box_image_data, box_len_data, class_picked_data]
 
 
 def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, num_classes, random=True,
@@ -385,6 +398,6 @@ def data_generator_wrapper(annotation_lines, batch_size, input_shape, anchors, n
 
 
 if __name__ == '__main__':
-    _main()
+    # _main()
     # eval()
-    # visual()
+    visual()

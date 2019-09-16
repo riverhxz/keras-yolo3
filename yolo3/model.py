@@ -223,7 +223,7 @@ def _scatter_moving_avg(ref, index, updates, momentum):
 
 
 def classify_head(x, num_class):
-    logits = Dense(num_class, initializer=initializers.get("henormal"))(x)
+    logits = Dense(num_class, kernel_initializer=initializers.get("he_normal"))(x)
     return logits
 
 def yolo_body_adain(inputs, needle_inputs, needle_embedding, needle_class, num_anchors, num_class,
@@ -301,11 +301,11 @@ def tiny_yolo_body(inputs, num_anchors, num_classes, **kwargs):
     return Model(inputs, [y1, y2])
 
 
-def needle_preprocess(max_box_length=10, image_size=64):
+def needle_preprocess(max_box_length=10, image_size=64, **kwargs):
     needle_input_num = Input(shape=[1], name='needle_num')
 
     needle_input = Input(shape=[max_box_length, image_size, image_size, 3], name='needle')
-    needle_embeding = tiny_yolo_backbone(needle_input)
+    needle_embeding = tiny_yolo_backbone(needle_input, **kwargs)
     debug(needle_embeding.outputs)
 
     def needle_reducer(inputs):
@@ -320,10 +320,8 @@ def needle_preprocess(max_box_length=10, image_size=64):
             mask = K.expand_dims(mask, -1)
         x = mask * x
 
-        debug(sys._getframe().f_lineno, x)
         x = K.sum(x, axis=[1, 2, 3], keepdims=False) / needle_input_num
 
-        debug(sys._getframe().f_lineno, x)
         return x
 
     embedding_out = needle_embeding.output
@@ -610,7 +608,7 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
     m = K.shape(yolo_outputs[0])[0]  # batch size, tensor
     mf = K.cast(m, K.dtype(yolo_outputs[0]))
 
-    classify_loss = K.binary_crossentropy(y_true[0][..., 5:6], args[-1], from_logits=True)
+    classify_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=args[-2], labels=tf.squeeze(args[-1]))
     for l in range(num_layers):
         object_mask = y_true[l][..., 4:5]
         true_class_probs = y_true[l][..., 5:]
@@ -668,5 +666,5 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5, print_loss=False):
                                    ]
                             , summarize=1000
                             , message='loss: ')
-        loss += classify_loss
+    loss += classify_loss
     return loss
